@@ -719,3 +719,571 @@ def plot_residual_diagnostics(residuals: pd.Series) -> go.Figure:
     )
 
     return fig
+
+
+def plot_fit_vs_actual(
+    actual: pd.Series,
+    fitted: pd.Series,
+    forecast_df: pd.DataFrame,
+    title: Optional[str] = None,
+    show_train_window: Optional[int] = None,
+) -> go.Figure:
+    """
+    Build unified fit versus actual plot with in-sample fit, out-of-sample forecast, and 95% interval.
+    """
+    fig = go.Figure()
+
+    actual_series = actual.dropna()
+    if show_train_window and len(actual_series) > show_train_window:
+        actual_plot = actual_series.iloc[-show_train_window:]
+    else:
+        actual_plot = actual_series
+
+    # 1. Actual series (full or windowed)
+    fig.add_trace(
+        go.Scatter(
+            x=actual_plot.index,
+            y=actual_plot.values,
+            mode="lines",
+            name="Actual",
+            line=dict(color="#94a3b8", width=2),
+            hovertemplate="<b>Actual</b>: %{y:.3f}<br>Date: %{x}<extra></extra>",
+        )
+    )
+
+    # 2. Fitted values (train portion)
+    fitted_clean = fitted.dropna()
+    if show_train_window and len(fitted_clean) > show_train_window:
+        fitted_plot = fitted_clean.iloc[-show_train_window:]
+    else:
+        fitted_plot = fitted_clean
+
+    if not fitted_plot.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=fitted_plot.index,
+                y=fitted_plot.values,
+                mode="lines",
+                name="Fitted (In-Sample)",
+                line=dict(color="#2563eb", width=2),
+                hovertemplate="<b>Fitted</b>: %{y:.3f}<br>Date: %{x}<extra></extra>",
+            )
+        )
+
+    # 3. Forecast and Confidence Interval
+    if not forecast_df.empty:
+        test_idx = forecast_df.index
+
+        if "upper" in forecast_df.columns and "lower" in forecast_df.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=test_idx,
+                    y=forecast_df["upper"].values,
+                    mode="lines",
+                    line=dict(width=0),
+                    showlegend=False,
+                    hoverinfo="skip",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=test_idx,
+                    y=forecast_df["lower"].values,
+                    mode="lines",
+                    line=dict(width=0),
+                    fill="tonexty",
+                    fillcolor="rgba(234, 88, 12, 0.2)",
+                    name="95% Interval",
+                    hoverinfo="skip",
+                )
+            )
+
+        if "mean" in forecast_df.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=test_idx,
+                    y=forecast_df["mean"].values,
+                    mode="lines",
+                    name="Forecast (Holdout)",
+                    line=dict(color="#ea580c", width=2.5),
+                    hovertemplate="<b>Forecast</b>: %{y:.3f}<br>Date: %{x}<extra></extra>",
+                )
+            )
+
+        # Train/Test Split Vertical Line (shape-based for datetime safety)
+        split_dt = test_idx[0]
+        split_str = split_dt.isoformat() if hasattr(split_dt, "isoformat") else str(split_dt)
+        fig.add_shape(
+            type="line",
+            x0=split_str,
+            x1=split_str,
+            y0=0,
+            y1=1,
+            yref="paper",
+            line=dict(color="#dc2626", width=1.5, dash="dash"),
+        )
+        fig.add_annotation(
+            x=split_str,
+            y=1.02,
+            yref="paper",
+            text="Train / Test Split",
+            showarrow=False,
+            xanchor="left",
+            font=dict(size=11, color="#dc2626"),
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        title=title or "Model Fit & Forecast vs. Actual",
+        xaxis_title="Date / Time",
+        yaxis_title="Value (Original Scale)",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=70, b=40),
+    )
+
+    return fig
+
+
+def plot_holdout_zoom(
+    actual: pd.Series,
+    forecast_df: pd.DataFrame,
+    train_tail: Optional[int] = None,
+) -> go.Figure:
+    """
+    Build zoomed view focusing exclusively on the holdout window and recent history.
+    """
+    fig = go.Figure()
+
+    if forecast_df.empty:
+        return fig
+
+    test_len = len(forecast_df)
+    tail_n = train_tail or max(10, 2 * test_len)
+
+    # Slice actual series around train tail + test
+    test_idx = forecast_df.index
+    train_actual = actual.loc[:test_idx[0]].iloc[:-1]
+    zoom_train = train_actual.iloc[-tail_n:] if len(train_actual) > tail_n else train_actual
+    zoom_test = actual.reindex(test_idx)
+
+    # Historical context line + markers
+    if not zoom_train.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=zoom_train.index,
+                y=zoom_train.values,
+                mode="lines+markers",
+                name="Actual (Train)",
+                line=dict(color="#94a3b8", width=1.5),
+                marker=dict(size=5),
+            )
+        )
+
+    # Test actual
+    if not zoom_test.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=zoom_test.index,
+                y=zoom_test.values,
+                mode="lines+markers",
+                name="Actual (Holdout)",
+                line=dict(color="#0f172a", width=2),
+                marker=dict(size=6, symbol="circle"),
+            )
+        )
+
+    # Forecast band
+    if "upper" in forecast_df.columns and "lower" in forecast_df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=test_idx,
+                y=forecast_df["upper"].values,
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=test_idx,
+                y=forecast_df["lower"].values,
+                mode="lines",
+                line=dict(width=0),
+                fill="tonexty",
+                fillcolor="rgba(234, 88, 12, 0.2)",
+                name="95% Interval",
+                hoverinfo="skip",
+            )
+        )
+
+    # Forecast mean
+    if "mean" in forecast_df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=test_idx,
+                y=forecast_df["mean"].values,
+                mode="lines+markers",
+                name="Forecast Mean",
+                line=dict(color="#ea580c", width=2.5),
+                marker=dict(size=6, symbol="diamond"),
+            )
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        title="Holdout Evaluation Zoom (Actual vs. Forecast)",
+        xaxis_title="Date / Time",
+        yaxis_title="Value (Original Scale)",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+
+    return fig
+
+
+def plot_inverse_roots(
+    ar_roots: Optional[Union[np.ndarray, list]],
+    ma_roots: Optional[Union[np.ndarray, list]],
+    title: str = "Inverse Roots & Stability / Invertibility",
+) -> go.Figure:
+    """
+    Plot complex inverse AR and MA roots against the unit circle.
+    Roots strictly inside unit circle (modulus < 1) signify stability / invertibility.
+    """
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        subplot_titles=[
+            "AR Inverse Roots (Stability: |1/r| < 1)",
+            "MA Inverse Roots (Invertibility: |1/r| < 1)",
+        ],
+    )
+
+    theta = np.linspace(0, 2 * np.pi, 200)
+    circle_x = np.cos(theta)
+    circle_y = np.sin(theta)
+
+    # Add unit circle to both subplots
+    for col in [1, 2]:
+        fig.add_trace(
+            go.Scatter(
+                x=circle_x,
+                y=circle_y,
+                mode="lines",
+                line=dict(color="#94a3b8", dash="dot", width=1.5),
+                name="Unit Circle",
+                showlegend=(col == 1),
+                hoverinfo="skip",
+            ),
+            row=1,
+            col=col,
+        )
+
+    # Subplot 1: AR Inverse Roots
+    ar_arr = np.asarray(ar_roots) if ar_roots is not None else np.array([])
+    if len(ar_arr) == 0:
+        fig.add_annotation(
+            text="No AR terms",
+            xref="x1",
+            yref="y1",
+            x=0,
+            y=0,
+            showarrow=False,
+            font=dict(size=14, color="#64748b"),
+        )
+    else:
+        valid_ar = ar_arr[ar_arr != 0]
+        inv_ar = 1.0 / valid_ar
+        moduli = np.abs(inv_ar)
+        colors = ["#ef4444" if m >= 1.0 else "#2563eb" for m in moduli]
+        fig.add_trace(
+            go.Scatter(
+                x=np.real(inv_ar),
+                y=np.imag(inv_ar),
+                mode="markers",
+                marker=dict(size=10, color=colors, line=dict(color="black", width=1)),
+                name="AR Inverse Roots",
+                hovertemplate="Real: %{x:.3f}<br>Imag: %{y:.3f}<extra></extra>",
+                showlegend=True,
+            ),
+            row=1,
+            col=1,
+        )
+
+    # Subplot 2: MA Inverse Roots
+    ma_arr = np.asarray(ma_roots) if ma_roots is not None else np.array([])
+    if len(ma_arr) == 0:
+        fig.add_annotation(
+            text="No MA terms",
+            xref="x2",
+            yref="y2",
+            x=0,
+            y=0,
+            showarrow=False,
+            font=dict(size=14, color="#64748b"),
+        )
+    else:
+        valid_ma = ma_arr[ma_arr != 0]
+        inv_ma = 1.0 / valid_ma
+        moduli_ma = np.abs(inv_ma)
+        colors_ma = ["#ef4444" if m >= 1.0 else "#059669" for m in moduli_ma]
+        fig.add_trace(
+            go.Scatter(
+                x=np.real(inv_ma),
+                y=np.imag(inv_ma),
+                mode="markers",
+                marker=dict(size=10, color=colors_ma, line=dict(color="black", width=1)),
+                name="MA Inverse Roots",
+                hovertemplate="Real: %{x:.3f}<br>Imag: %{y:.3f}<extra></extra>",
+                showlegend=True,
+            ),
+            row=1,
+            col=2,
+        )
+
+    for col in [1, 2]:
+        fig.update_xaxes(
+            range=[-1.4, 1.4],
+            zeroline=True,
+            zerolinecolor="#cbd5e1",
+            title="Real",
+            scaleanchor=f"y{col}",
+            scaleratio=1,
+            row=1,
+            col=col,
+        )
+        fig.update_yaxes(
+            range=[-1.4, 1.4],
+            zeroline=True,
+            zerolinecolor="#cbd5e1",
+            title="Imaginary",
+            row=1,
+            col=col,
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        title=title,
+        height=450,
+        margin=dict(l=40, r=40, t=60, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="right", x=1),
+    )
+
+    return fig
+
+
+def plot_theoretical_vs_empirical(
+    lags: np.ndarray,
+    empirical_acf: np.ndarray,
+    empirical_pacf: np.ndarray,
+    theo_acf: Optional[np.ndarray],
+    theo_pacf: Optional[np.ndarray],
+    conf_bound: float,
+) -> go.Figure:
+    """
+    Overlay empirical ACF/PACF with theoretical ARMA model ACF/PACF.
+    """
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        subplot_titles=["ACF: Empirical vs. Model Theoretical", "PACF: Empirical vs. Model Theoretical"],
+    )
+
+    n_lags = len(lags)
+
+    # 1. ACF
+    fig.add_trace(
+        go.Bar(
+            x=lags,
+            y=empirical_acf[:n_lags],
+            width=0.25,
+            marker_color="#94a3b8",
+            name="Empirical ACF",
+        ),
+        row=1,
+        col=1,
+    )
+    if theo_acf is not None:
+        theo_len = min(n_lags, len(theo_acf))
+        fig.add_trace(
+            go.Scatter(
+                x=lags[:theo_len],
+                y=theo_acf[:theo_len],
+                mode="lines+markers",
+                line=dict(color="#2563eb", width=2),
+                marker=dict(size=6, symbol="circle"),
+                name="Theoretical ACF",
+            ),
+            row=1,
+            col=1,
+        )
+
+    fig.add_hline(y=conf_bound, line=dict(color="#ef4444", dash="dash"), row=1, col=1)
+    fig.add_hline(y=-conf_bound, line=dict(color="#ef4444", dash="dash"), row=1, col=1)
+    fig.add_hline(y=0, line=dict(color="#64748b"), row=1, col=1)
+
+    # 2. PACF
+    fig.add_trace(
+        go.Bar(
+            x=lags,
+            y=empirical_pacf[:n_lags],
+            width=0.25,
+            marker_color="#94a3b8",
+            name="Empirical PACF",
+        ),
+        row=1,
+        col=2,
+    )
+    if theo_pacf is not None:
+        theo_len = min(n_lags, len(theo_pacf))
+        fig.add_trace(
+            go.Scatter(
+                x=lags[:theo_len],
+                y=theo_pacf[:theo_len],
+                mode="lines+markers",
+                line=dict(color="#7c3aed", width=2),
+                marker=dict(size=6, symbol="circle"),
+                name="Theoretical PACF",
+            ),
+            row=1,
+            col=2,
+        )
+
+    fig.add_hline(y=conf_bound, line=dict(color="#ef4444", dash="dash"), row=1, col=2)
+    fig.add_hline(y=-conf_bound, line=dict(color="#ef4444", dash="dash"), row=1, col=2)
+    fig.add_hline(y=0, line=dict(color="#64748b"), row=1, col=2)
+
+    fig.update_layout(
+        template="plotly_white",
+        title="Theoretical vs. Empirical Correlation Structure",
+        height=450,
+        margin=dict(l=40, r=40, t=60, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="right", x=1),
+    )
+
+    return fig
+
+
+def plot_hw_components(
+    extras: Dict[str, Any],
+    index: pd.Index,
+) -> go.Figure:
+    """
+    Plot Holt-Winters estimated components (Level, Trend, Seasonality) in the model scale.
+    """
+    level = extras.get("level")
+    trend = extras.get("trend")
+    season = extras.get("season")
+
+    plots_to_show = []
+    if level is not None:
+        plots_to_show.append(("Level", level, "#2563eb"))
+    if trend is not None:
+        plots_to_show.append(("Trend", trend, "#059669"))
+    if season is not None:
+        plots_to_show.append(("Seasonality", season, "#7c3aed"))
+
+    if not plots_to_show:
+        fig = go.Figure()
+        fig.add_annotation(text="No Holt-Winters state components available", showarrow=False)
+        fig.update_layout(template="plotly_white", height=300)
+        return fig
+
+    n_rows = len(plots_to_show)
+    fig = make_subplots(
+        rows=n_rows,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.08,
+        subplot_titles=[name for name, _, _ in plots_to_show],
+    )
+
+    for i, (name, comp_s, col_hex) in enumerate(plots_to_show, start=1):
+        s_vals = comp_s.values if hasattr(comp_s, "values") else np.asarray(comp_s)
+        s_idx = comp_s.index if hasattr(comp_s, "index") else index[-len(s_vals):]
+        fig.add_trace(
+            go.Scatter(
+                x=s_idx,
+                y=s_vals,
+                mode="lines",
+                name=name,
+                line=dict(color=col_hex, width=2),
+            ),
+            row=i,
+            col=1,
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        height=220 * n_rows + 80,
+        title="Holt-Winters Estimated State Components (Model Scale)",
+        showlegend=False,
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+
+    return fig
+
+
+def plot_grid_results(
+    grid_df: pd.DataFrame,
+    top_n: int = 15,
+) -> go.Figure:
+    """
+    Horizontal bar chart of top grid search specifications comparing AIC and BIC.
+    """
+    if grid_df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="No grid search results to display", showarrow=False)
+        fig.update_layout(template="plotly_white")
+        return fig
+
+    top_df = grid_df.head(min(top_n, len(grid_df))).copy()
+    # Reverse order so best is at the top of horizontal chart
+    top_df = top_df.iloc[::-1].reset_index(drop=True)
+
+    fig = go.Figure()
+
+    # AIC Trace with best model highlighted
+    aic_colors = ["#2563eb"] * len(top_df)
+    if len(aic_colors) > 0:
+        aic_colors[-1] = "#059669"
+
+    fig.add_trace(
+        go.Bar(
+            y=top_df["spec"],
+            x=top_df["aic"],
+            orientation="h",
+            name="AIC",
+            marker=dict(color=aic_colors),
+            hovertemplate="<b>%{y}</b><br>AIC: %{x:.2f}<extra></extra>",
+        )
+    )
+
+    # BIC Trace
+    fig.add_trace(
+        go.Bar(
+            y=top_df["spec"],
+            x=top_df["bic"],
+            orientation="h",
+            name="BIC",
+            marker_color="#94a3b8",
+            hovertemplate="<b>%{y}</b><br>BIC: %{x:.2f}<extra></extra>",
+        )
+    )
+
+    fig.update_layout(
+        template="plotly_white",
+        barmode="group",
+        title=f"Top {len(top_df)} Candidate Models (Sorted by AIC)",
+        xaxis_title="Information Criterion (Lower is Better)",
+        yaxis_title="Specification",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        height=max(400, 30 * len(top_df) + 120),
+        margin=dict(l=100, r=40, t=60, b=40),
+    )
+
+    return fig
+

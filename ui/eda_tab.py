@@ -3,9 +3,9 @@ EDA and Diagnostics UI Tab for ATSA.
 
 Provides comprehensive diagnostic inspections:
 - Tab 1: Stationarity testing (ADF, KPSS, joint verdict, rolling statistics).
-- Tab 2: Autocorrelation (ACF, PACF stem plots, heuristic order suggestions).
+- Tab 2: Autocorrelation (ACF, PACF stem plots, contiguous order suggestions, seasonal hints).
 - Tab 3: Time series decomposition (Classical, STL, Hyndman trend & seasonality strength).
-- Tab 4: Transformations & Differencing (Log, Box-Cox, Diff, Seasonal Diff, re-testing, modeling series selection).
+- Tab 4: Transformations & Differencing (Log, Box-Cox, Diff, Seasonal Diff, model_base_series handoff).
 - Tab 5: Other EDA (Seasonal distribution box plot, Lag plot, Histogram + Q-Q plot, Ljung-Box test).
 """
 
@@ -231,6 +231,8 @@ def render_eda_tab() -> None:
             key="acf_nlags_slider",
         )
 
+        inferred_m = infer_period_from_frequency(series)
+
         try:
             acf_pacf_res = cached_acf_pacf(series, nlags=selected_nlags)
             lags = acf_pacf_res["lags"]
@@ -263,13 +265,13 @@ def render_eda_tab() -> None:
                 st.plotly_chart(fig_pacf, width="stretch")
 
             # Order suggestions hint box
-            suggestions = suggest_orders(acf_vals, pacf_vals, conf_bound)
+            suggestions = suggest_orders(acf_vals, pacf_vals, conf_bound, m=inferred_m)
+            seasonal_text = f"\n- **Seasonal Hint (m={inferred_m})**: {suggestions['seasonal_hint']}" if suggestions.get("seasonal_hint") else ""
             st.info(
-                f"💡 **Suggested Model Order Hints (Heuristic)**:\n"
-                f"- **Significant PACF Lags (hint for AR order $p$)**: {suggestions['sig_pacf_lags'] if suggestions['sig_pacf_lags'] else 'None beyond lag 0'} "
-                f"*(Suggested $p \\approx {suggestions['suggested_p']}$)*\n"
-                f"- **Significant ACF Lags (hint for MA order $q$)**: {suggestions['sig_acf_lags'] if suggestions['sig_acf_lags'] else 'None beyond lag 0'} "
-                f"*(Suggested $q \\approx {suggestions['suggested_q']}$)*\n\n"
+                f"💡 **Suggested Model Order Hints (Leading Contiguous Lags)**:\n"
+                f"- **Suggested AR order $p$**: `{suggestions['suggested_p']}` (Contiguous significant PACF lags starting at lag 1)\n"
+                f"- **Suggested MA order $q$**: `{suggestions['suggested_q']}` (Contiguous significant ACF lags starting at lag 1)"
+                f"{seasonal_text}\n\n"
                 f"*{suggestions['caption']}*"
             )
 
@@ -304,19 +306,23 @@ def render_eda_tab() -> None:
             )
 
         with d_col3:
-            inferred_p = infer_period_from_frequency(series) or 12
-            use_manual_period = st.checkbox("Override Seasonal Period", value=False, key="decomp_manual_p_check")
+            inferred_p = infer_period_from_frequency(series)
+            use_manual_period = st.checkbox(
+                "Specify Seasonal Period Manually",
+                value=(inferred_p is None),
+                key="decomp_manual_p_check",
+            )
             if use_manual_period:
                 decomp_period = st.number_input(
                     "Seasonal Period:",
                     min_value=2,
                     max_value=max(3, len(series) // 2),
-                    value=int(inferred_p),
+                    value=int(inferred_p or 12),
                     step=1,
                     key="decomp_period_input",
                 )
             else:
-                decomp_period = int(inferred_p)
+                decomp_period = int(inferred_p) if inferred_p else None
                 st.caption(f"Auto-inferred period: **{decomp_period}**")
 
         try:
@@ -348,19 +354,23 @@ def render_eda_tab() -> None:
     with eda_t4:
         st.subheader("Transformations & Differencing Pipeline")
         st.markdown(
-            "Stabilize non-constant variance using **Log** or **Box-Cox**, and stabilize non-stationary "
-            "levels using **regular** and **seasonal differencing**."
+            "Stabilize non-constant variance using **Log** or **Box-Cox**, and identify differencing orders "
+            "($d, D$). In Phase 3, models receive the variance-stabilized **base series** and perform differencing internally."
         )
 
         active_model_series = st.session_state.get("model_series", series)
         active_transform_info = st.session_state.get("transform_info", {"steps": []})
         steps_display = active_transform_info.get("steps")
-        if not steps_display:
-            steps_text = "None (Original Regularized Series)"
-        else:
-            steps_text = " -> ".join(steps_display)
+        steps_text = " -> ".join(steps_display) if steps_display else "None (Regularized Series)"
 
-        st.info(f"🎯 **Active Series for Modeling**: **{len(active_model_series)} observations** | Pipeline: `{steps_text}`")
+        s_d = active_transform_info.get("suggested_d", 0)
+        s_D = active_transform_info.get("suggested_D", 0)
+        s_m = active_transform_info.get("seasonal_period")
+
+        st.info(
+            f"🎯 **Active Modeling Setup**: Pipeline: `{steps_text}` | "
+            f"**Models will difference internally using d={s_d} and D={s_D}**" + (f" (m={s_m})" if s_D > 0 else "")
+        )
 
         t_ctrl1, t_ctrl2, t_ctrl3, t_ctrl4 = st.columns(4)
 
@@ -389,11 +399,12 @@ def render_eda_tab() -> None:
             )
 
         with t_ctrl4:
+            inferred_seas_m = infer_period_from_frequency(series) or 12
             seas_period_val = st.number_input(
                 "Seasonal Period (m):",
                 min_value=2,
                 max_value=max(3, len(series) // 2),
-                value=int(infer_period_from_frequency(series) or 12),
+                value=int(inferred_seas_m),
                 key="tf_seas_period_input",
             )
 
@@ -401,6 +412,16 @@ def render_eda_tab() -> None:
         apply_boxcox = var_transform == "Box-Cox"
 
         try:
+            # 1. Base series (variance transform ONLY)
+            base_s, base_info = transform_series(
+                series,
+                log=apply_log,
+                boxcox_tf=apply_boxcox,
+                diff_order=0,
+                seasonal_diff_order=0,
+            )
+
+            # 2. Fully transformed series (with differencing)
             transformed_s, tf_info = transform_series(
                 series,
                 log=apply_log,
@@ -419,7 +440,7 @@ def render_eda_tab() -> None:
             with c_comp2:
                 fig_trans = plot_time_series(
                     transformed_s,
-                    title=f"Transformed Series ({len(transformed_s)} obs)",
+                    title=f"Fully Transformed Series ({len(transformed_s)} obs)",
                     line_color="#059669",
                 )
                 st.plotly_chart(fig_trans, width="stretch")
@@ -450,17 +471,30 @@ def render_eda_tab() -> None:
             # Action Buttons to set or reset model series
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("🚀 Use Transformed Series for Modeling", help="Save this transformed series for future model fitting."):
+                if st.button("🚀 Use Transformed Series for Modeling", help="Save variance-stabilized series and suggested d, D for modeling."):
+                    tf_info_copy = dict(tf_info)
+                    tf_info_copy["suggested_d"] = diff_d
+                    tf_info_copy["suggested_D"] = seas_d
+                    tf_info_copy["seasonal_period"] = seas_period_val if seas_d > 0 else None
+
                     st.session_state["model_series"] = transformed_s
-                    st.session_state["transform_info"] = tf_info
-                    st.success("Transformed series set as active modeling series!")
+                    st.session_state["model_base_series"] = base_s
+                    st.session_state["transform_info"] = tf_info_copy
+                    st.toast("Transformed series set as active modeling series!", icon="🚀")
                     st.rerun()
 
             with btn_col2:
                 if st.button("↺ Reset to Original Regularized Series", help="Restore active modeling series to original regularized data."):
                     st.session_state["model_series"] = series
-                    st.session_state["transform_info"] = {"steps": [], "params": {}}
-                    st.info("Reset active modeling series to original data.")
+                    st.session_state["model_base_series"] = series
+                    st.session_state["transform_info"] = {
+                        "steps": [],
+                        "params": {},
+                        "suggested_d": 0,
+                        "suggested_D": 0,
+                        "seasonal_period": None,
+                    }
+                    st.toast("Reset active modeling series to original data.", icon="↺")
                     st.rerun()
 
         except Exception as exc:

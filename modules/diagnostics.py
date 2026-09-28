@@ -4,20 +4,23 @@ Diagnostics and Statistical Tests Module for Applied Time Series Analysis (ATSA)
 Pure Python functions (no Streamlit dependencies) providing:
 - Augmented Dickey-Fuller (ADF) & Kwiatkowski-Phillips-Schmidt-Shin (KPSS) tests.
 - Stationarity synthesis verdict.
-- ACF and PACF calculations with confidence intervals and heuristic order suggestions.
-- Classical and STL time series decomposition with Hyndman strength metrics.
-- Series transformations (Log, Box-Cox, Regular & Seasonal Differencing) with metadata tracking.
+- ACF and PACF calculations with confidence intervals and contiguous order suggestions.
+- Classical and STL time series decomposition with exact frequency mapping and Hyndman metrics.
+- Series transformations (Log, Box-Cox, Regular & Seasonal Differencing) and inverse variance transforms.
 - Rolling statistics and seasonal subseries extraction.
 - Ljung-Box test for autocorrelation diagnostics.
 """
 
 from typing import Any, Dict, List, Optional, Tuple, Union
+import re
 import warnings
 import numpy as np
 import pandas as pd
+from scipy.special import inv_boxcox
 from scipy.stats import boxcox
 from statsmodels.stats.diagnostic import acorr_ljungbox
 from statsmodels.tools.sm_exceptions import InterpolationWarning
+from statsmodels.tsa.arima_process import ArmaProcess
 from statsmodels.tsa.seasonal import STL, seasonal_decompose
 from statsmodels.tsa.stattools import acf, adfuller, kpss, pacf
 
@@ -32,22 +35,6 @@ def adf_test(
 
     Null Hypothesis (H0): The series has a unit root (non-stationary).
     Alternative Hypothesis (H1): The series is stationary.
-
-    Parameters
-    ----------
-    series : pd.Series
-        Time series data to test.
-    regression : str, default='c'
-        Constant and trend order: 'c' (constant), 'ct' (constant + trend),
-        'ctt' (constant + linear + quadratic trend), 'n' (no constant/trend).
-    autolag : str, default='AIC'
-        Lag selection criterion: 'AIC', 'BIC', 't-stat', or None.
-
-    Returns
-    -------
-    Dict[str, Any]
-        Test results containing test statistic, p-value, used lag, number of observations,
-        critical values dictionary, and is_stationary boolean (p < 0.05).
     """
     clean_s = series.dropna()
     if len(clean_s) < 10:
@@ -78,21 +65,6 @@ def kpss_test(
 
     Null Hypothesis (H0): The series is trend-stationary (or level-stationary).
     Alternative Hypothesis (H1): The series has a unit root (non-stationary).
-
-    Parameters
-    ----------
-    series : pd.Series
-        Time series data to test.
-    regression : str, default='c'
-        'c' (level stationary) or 'ct' (trend stationary).
-    nlags : Union[str, int], default='auto'
-        Number of lags or 'auto'.
-
-    Returns
-    -------
-    Dict[str, Any]
-        Test results containing statistic, p-value, used lag, critical values,
-        and is_stationary boolean (p > 0.05).
     """
     clean_s = series.dropna()
     if len(clean_s) < 10:
@@ -116,21 +88,7 @@ def kpss_test(
 
 
 def stationarity_verdict(adf: Dict[str, Any], kpss_res: Dict[str, Any]) -> Dict[str, str]:
-    """
-    Synthesize ADF and KPSS test outcomes into a joint stationarity verdict.
-
-    Parameters
-    ----------
-    adf : Dict[str, Any]
-        Result dict from adf_test.
-    kpss_res : Dict[str, Any]
-        Result dict from kpss_test.
-
-    Returns
-    -------
-    Dict[str, str]
-        Dictionary with 'verdict', 'explanation', and 'status' ('success', 'warning', 'info').
-    """
+    """Synthesize ADF and KPSS test outcomes into a joint stationarity verdict."""
     adf_stationary = adf["is_stationary"]
     kpss_stationary = kpss_res["is_stationary"]
 
@@ -175,24 +133,7 @@ def compute_acf_pacf(
     nlags: int = 40,
     alpha: float = 0.05,
 ) -> Dict[str, Any]:
-    """
-    Compute Autocorrelation Function (ACF) and Partial Autocorrelation Function (PACF).
-
-    Parameters
-    ----------
-    series : pd.Series
-        Time series data.
-    nlags : int, default=40
-        Requested number of lags. Will be automatically capped at min(nlags, len(series)//2 - 1).
-    alpha : float, default=0.05
-        Significance level for confidence bounds.
-
-    Returns
-    -------
-    Dict[str, Any]
-        Dictionary containing lags array, acf values, pacf values, confidence intervals,
-        and standard normal critical bound (z / sqrt(N)).
-    """
+    """Compute Autocorrelation Function (ACF) and Partial Autocorrelation Function (PACF)."""
     clean_s = series.dropna()
     n = len(clean_s)
     max_lags = max(1, n // 2 - 1)
@@ -222,35 +163,52 @@ def suggest_orders(
     acf_vals: np.ndarray,
     pacf_vals: np.ndarray,
     conf_bound: float,
+    m: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
-    Provide heuristic hints for AR order (p) and MA order (q) from significant ACF/PACF cutoffs.
-
-    Parameters
-    ----------
-    acf_vals : np.ndarray
-        Array of ACF values starting at lag 0.
-    pacf_vals : np.ndarray
-        Array of PACF values starting at lag 0.
-    conf_bound : float
-        Confidence bound threshold (+/- z / sqrt(N)).
-
-    Returns
-    -------
-    Dict[str, Any]
-        Dictionary with significant AR lags, significant MA lags, suggested p, suggested q,
-        and advisory caption.
+    Provide heuristic hints for AR order (p) and MA order (q) based on the highest lag
+    in the LEADING contiguous run of significant lags starting at lag 1 (0 if lag 1 is not significant).
+    Also detects significant seasonal spikes at lag m or 2m if m is provided.
     """
     sig_pacf_lags = [int(i) for i in range(1, len(pacf_vals)) if abs(pacf_vals[i]) > conf_bound]
     sig_acf_lags = [int(i) for i in range(1, len(acf_vals)) if abs(acf_vals[i]) > conf_bound]
 
-    # Suggest order as first non-significant cutoff or first significant lag
-    suggested_p = sig_pacf_lags[0] if sig_pacf_lags else 0
-    suggested_q = sig_acf_lags[0] if sig_acf_lags else 0
+    # Leading contiguous run of significant PACF lags starting at lag 1
+    suggested_p = 0
+    for lag in range(1, len(pacf_vals)):
+        if abs(pacf_vals[lag]) > conf_bound:
+            suggested_p = lag
+        else:
+            break
+
+    # Leading contiguous run of significant ACF lags starting at lag 1
+    suggested_q = 0
+    for lag in range(1, len(acf_vals)):
+        if abs(acf_vals[lag]) > conf_bound:
+            suggested_q = lag
+        else:
+            break
+
+    # Seasonal autocorrelation hint
+    seasonal_hint = None
+    if m is not None and m > 1:
+        seas_spikes = []
+        if m < len(acf_vals) and (abs(acf_vals[m]) > conf_bound or abs(pacf_vals[m]) > conf_bound):
+            seas_spikes.append(m)
+        if 2 * m < len(acf_vals) and (abs(acf_vals[2 * m]) > conf_bound or abs(pacf_vals[2 * m]) > conf_bound):
+            seas_spikes.append(2 * m)
+
+        if seas_spikes:
+            seasonal_hint = (
+                f"Significant seasonal correlation detected at lag(s) {seas_spikes}; "
+                f"consider seasonal modeling with period m={m}."
+            )
+        else:
+            seasonal_hint = f"No significant seasonal spikes detected at period m={m}."
 
     caption = (
-        "Note: ACF and PACF cutoffs provide rough heuristic hints. For rigorous model selection, "
-        "always compare information criteria (AIC, BIC) across candidate ARIMA/SARIMA specifications."
+        "Note: Suggested p and q are based on the leading contiguous run of significant lags. "
+        "For rigorous model selection, always compare AIC/BIC across candidate models."
     )
 
     return {
@@ -258,18 +216,15 @@ def suggest_orders(
         "sig_acf_lags": sig_acf_lags[:5],
         "suggested_p": suggested_p,
         "suggested_q": suggested_q,
+        "seasonal_hint": seasonal_hint,
         "caption": caption,
     }
 
 
 def infer_period_from_frequency(series: pd.Series) -> Optional[int]:
     """
-    Infer canonical seasonal period integer from a series DatetimeIndex frequency.
-
-    Returns
-    -------
-    Optional[int]
-        Inferred seasonal period (e.g. 12 for monthly, 7 for daily) or None.
+    Infer canonical seasonal period integer from a series DatetimeIndex frequency
+    using exact leading alphabetic token matching.
     """
     if not isinstance(series.index, pd.DatetimeIndex):
         return None
@@ -278,21 +233,34 @@ def infer_period_from_frequency(series: pd.Series) -> Optional[int]:
     if not freq:
         return None
 
-    freq_upper = freq.upper()
-    if freq_upper.startswith("D"):
-        return 7
-    elif freq_upper.startswith("W"):
-        return 52
-    elif freq_upper.startswith(("M", "MS", "ME")):
-        return 12
-    elif freq_upper.startswith(("Q", "QS", "QE")):
-        return 4
-    elif freq_upper.startswith(("H", "h")):
-        return 24
-    elif freq_upper.startswith(("Y", "YS", "YE", "A")):
+    # Parse leading alphabetic token
+    match = re.match(r"^[A-Za-z]+", freq.strip())
+    if not match:
         return None
 
-    return None
+    token = match.group(0)
+
+    exact_map = {
+        "D": 7,
+        "B": 5,
+        "W": 52,
+        "M": 12,
+        "MS": 12,
+        "ME": 12,
+        "Q": 4,
+        "QS": 4,
+        "QE": 4,
+        "H": 24,
+        "h": 24,
+        "Y": None,
+        "YS": None,
+        "YE": None,
+        "A": None,
+        "AS": None,
+        "YA": None,
+    }
+
+    return exact_map.get(token, None)
 
 
 def decompose(
@@ -303,23 +271,8 @@ def decompose(
 ) -> Dict[str, Any]:
     """
     Decompose time series into trend, seasonal, and residual components with Hyndman strength metrics.
-
-    Parameters
-    ----------
-    series : pd.Series
-        Time series data indexed by DatetimeIndex.
-    model : str, default='additive'
-        'additive' or 'multiplicative'.
-    period : Optional[int], default=None
-        Seasonal cycle period length. If None, auto-inferred from frequency.
-    method : str, default='classical'
-        'classical' (moving-average decomposition) or 'stl' (Loess decomposition).
-
-    Returns
-    -------
-    Dict[str, Any]
-        Dictionary containing observed, trend, seasonal, resid series, period,
-        trend strength (F_T), seasonal strength (F_S), and optional error message.
+    Requires at least 2 full periods; multiplicative model requires strictly positive values.
+    Returns clear error message if period cannot be determined or conditions are unmet.
     """
     clean_s = series.dropna()
 
@@ -327,12 +280,10 @@ def decompose(
     chosen_period = period
     if chosen_period is None or chosen_period <= 1:
         chosen_period = infer_period_from_frequency(clean_s)
-        if chosen_period is None or chosen_period <= 1:
-            chosen_period = 12 if len(clean_s) >= 24 else None
 
     if chosen_period is None or chosen_period <= 1:
         return {
-            "error": "Could not determine seasonal period. Please specify an explicit seasonal period > 1.",
+            "error": "Could not automatically infer seasonal period from series frequency. Please specify an explicit seasonal period > 1.",
         }
 
     # Guard: need at least 2 full periods
@@ -358,7 +309,6 @@ def decompose(
             resid = decomp.resid
         elif method.lower() == "stl":
             if model.lower() == "multiplicative":
-                # STL on log-transformed data
                 log_s = np.log(clean_s)
                 stl_obj = STL(log_s, period=chosen_period, robust=True).fit()
                 observed = clean_s
@@ -374,9 +324,6 @@ def decompose(
         else:
             return {"error": f"Unknown decomposition method '{method}'. Choose 'classical' or 'stl'."}
 
-        # Hyndman strength calculations:
-        # F_T = max(0, 1 - Var(resid) / Var(trend + resid))
-        # F_S = max(0, 1 - Var(resid) / Var(seasonal + resid))
         var_resid = np.nanvar(resid, ddof=1)
         var_trend_resid = np.nanvar(trend + resid, ddof=1)
         var_seas_resid = np.nanvar(seasonal + resid, ddof=1)
@@ -410,31 +357,6 @@ def transform_series(
 ) -> Tuple[pd.Series, Dict[str, Any]]:
     """
     Apply variance stabilizing (Log / Box-Cox) and differencing transformations in sequential order.
-
-    Parameters
-    ----------
-    series : pd.Series
-        Original time series.
-    log : bool, default=False
-        Apply natural logarithm. Mutually exclusive with boxcox_tf.
-    boxcox_tf : bool, default=False
-        Apply SciPy Box-Cox power transform. Mutually exclusive with log.
-    diff_order : int, default=0
-        Order of regular differencing (0, 1, 2).
-    seasonal_diff_order : int, default=0
-        Order of seasonal differencing (0, 1).
-    seasonal_period : Optional[int], default=None
-        Period length for seasonal differencing.
-
-    Returns
-    -------
-    Tuple[pd.Series, Dict[str, Any]]
-        Transformed pd.Series and info dictionary recording applied transformation pipeline.
-
-    Raises
-    ------
-    ValueError
-        If parameters are invalid or values violate transformation domains.
     """
     if log and boxcox_tf:
         raise ValueError("Log and Box-Cox transformations are mutually exclusive. Choose at most one.")
@@ -489,22 +411,47 @@ def transform_series(
     return s, info_dict
 
 
+def inverse_variance_transform(
+    values: Union[pd.Series, pd.DataFrame, np.ndarray, float],
+    transform_info: Optional[Dict[str, Any]],
+) -> Union[pd.Series, pd.DataFrame, np.ndarray, float]:
+    """
+    Invert variance stabilization transformations (Log -> exp, Box-Cox -> inv_boxcox).
+    Works on Series, DataFrames, numpy arrays, or scalar floats.
+    """
+    if not transform_info:
+        return values
+
+    steps = transform_info.get("steps", [])
+    params = transform_info.get("params", {})
+
+    if "log" in steps:
+        if isinstance(values, (pd.Series, pd.DataFrame)):
+            return np.exp(values)
+        elif isinstance(values, np.ndarray):
+            return np.exp(values)
+        else:
+            return float(np.exp(values))
+
+    elif "boxcox" in steps:
+        lmbda = params.get("boxcox_lambda")
+        if lmbda is not None:
+            if isinstance(values, pd.Series):
+                res = inv_boxcox(values.values, lmbda)
+                return pd.Series(res, index=values.index, name=values.name)
+            elif isinstance(values, pd.DataFrame):
+                res = inv_boxcox(values.values, lmbda)
+                return pd.DataFrame(res, index=values.index, columns=values.columns)
+            elif isinstance(values, np.ndarray):
+                return inv_boxcox(values, lmbda)
+            else:
+                return float(inv_boxcox(values, lmbda))
+
+    return values
+
+
 def rolling_stats(series: pd.Series, window: int = 12) -> pd.DataFrame:
-    """
-    Compute rolling mean and rolling standard deviation.
-
-    Parameters
-    ----------
-    series : pd.Series
-        Time series.
-    window : int, default=12
-        Rolling window length.
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with columns 'rolling_mean' and 'rolling_std'.
-    """
+    """Compute rolling mean and rolling standard deviation."""
     clean_s = series.dropna()
     effective_window = max(2, min(window, len(clean_s) - 1))
     r_mean = clean_s.rolling(window=effective_window).mean()
@@ -514,21 +461,7 @@ def rolling_stats(series: pd.Series, window: int = 12) -> pd.DataFrame:
 
 
 def seasonal_subseries(series: pd.Series, period: int = 12) -> pd.DataFrame:
-    """
-    Organize time series observations by cycle/season for subseries inspection.
-
-    Parameters
-    ----------
-    series : pd.Series
-        Time series with DatetimeIndex.
-    period : int, default=12
-        Seasonal cycle period.
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with columns 'cycle', 'cycle_label', and 'value'.
-    """
+    """Organize time series observations by cycle/season for subseries inspection."""
     clean_s = series.dropna()
     n = len(clean_s)
 
@@ -556,21 +489,7 @@ def seasonal_subseries(series: pd.Series, period: int = 12) -> pd.DataFrame:
 
 
 def ljung_box_test(series: pd.Series, lags: Optional[Union[int, List[int]]] = None) -> pd.DataFrame:
-    """
-    Perform the Ljung-Box test for autocorrelation at multiple lag orders.
-
-    Parameters
-    ----------
-    series : pd.Series
-        Time series or residual series.
-    lags : Optional[Union[int, List[int]]], default=None
-        Lags to test. If None, uses min(10, len(series)//5).
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with test statistics and p-values indexed by lag.
-    """
+    """Perform the Ljung-Box test for autocorrelation at multiple lag orders."""
     clean_s = series.dropna()
     n = len(clean_s)
     if n < 10:
@@ -584,3 +503,41 @@ def ljung_box_test(series: pd.Series, lags: Optional[Union[int, List[int]]] = No
     res = acorr_ljungbox(clean_s, lags=effective_lags, return_df=True)
     res = res.rename(columns={"lb_stat": "Statistic", "lb_pvalue": "p-value"})
     return res
+
+
+def theoretical_acf_pacf(
+    reduced_ar: Union[np.ndarray, list],
+    reduced_ma: Union[np.ndarray, list],
+    nlags: int = 40,
+) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """
+    Compute theoretical Autocorrelation Function (ACF) and Partial Autocorrelation
+    Function (PACF) for a stationary ARMA process.
+
+    Parameters
+    ----------
+    reduced_ar : Union[np.ndarray, list]
+        Polynomial coefficients in the AR lag operator: [1, -phi_1, -phi_2, ...].
+    reduced_ma : Union[np.ndarray, list]
+        Polynomial coefficients in the MA lag operator: [1, theta_1, theta_2, ...].
+    nlags : int, default=40
+        Number of lags to compute.
+
+    Returns
+    -------
+    Optional[Tuple[np.ndarray, np.ndarray]]
+        Tuple of (theo_acf, theo_pacf) arrays of length nlags + 1,
+        or None if the process is non-stationary or nlags is excessive.
+    """
+    try:
+        ar_poly = np.asarray(reduced_ar, dtype=float)
+        ma_poly = np.asarray(reduced_ma, dtype=float)
+        ap = ArmaProcess(ar_poly, ma_poly)
+        if not ap.isstationary:
+            return None
+        theo_acf = ap.acf(lags=nlags + 1)
+        theo_pacf = ap.pacf(lags=nlags + 1)
+        return theo_acf, theo_pacf
+    except Exception:
+        return None
+

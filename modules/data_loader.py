@@ -360,6 +360,12 @@ def regularize_series(
             # Alignment check: if asfreq would produce mostly NaN (>50% of resulting rows are new NaNs)
             if len(s_asfreq) > 0 and (new_nans / len(s_asfreq)) > 0.5:
                 s_resampled = s.resample(freq_used).mean()
+                # Check for upsampling (target frequency is finer than data interval)
+                if len(s_resampled) > 0 and (int(s_resampled.isna().sum()) / len(s_resampled)) > 0.5:
+                    raise ValueError(
+                        "Target frequency is finer than the data's actual sampling interval; "
+                        "upsampling would fabricate data. Choose a coarser frequency or Auto-detect."
+                    )
                 method_used = "resample"
                 warning_msg = (
                     f"Selected frequency '{freq_used}' does not align with timestamps (asfreq would produce "
@@ -371,13 +377,22 @@ def regularize_series(
                 method_used = "asfreq"
                 rows_added = len(s_asfreq) - len(s)
                 s = s_asfreq
+        except ValueError:
+            raise
         except Exception as asfreq_err:
             try:
                 s_resampled = s.resample(freq_used).mean()
+                if len(s_resampled) > 0 and (int(s_resampled.isna().sum()) / len(s_resampled)) > 0.5:
+                    raise ValueError(
+                        "Target frequency is finer than the data's actual sampling interval; "
+                        "upsampling would fabricate data. Choose a coarser frequency or Auto-detect."
+                    )
                 method_used = "resample"
                 warning_msg = f"asfreq('{freq_used}') failed ({asfreq_err}); fell back to resample().mean()."
                 rows_added = max(0, len(s_resampled) - len(s))
                 s = s_resampled
+            except ValueError:
+                raise
             except Exception as resample_err:
                 raise ValueError(
                     f"Frequency alignment failed for frequency '{freq_used}'. "

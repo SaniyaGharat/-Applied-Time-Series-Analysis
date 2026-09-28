@@ -18,6 +18,7 @@ from modules.diagnostics import (
     adf_test,
     compute_acf_pacf,
     decompose,
+    infer_period_from_frequency,
     kpss_test,
     rolling_stats,
     seasonal_subseries,
@@ -179,6 +180,44 @@ def test_plots_smoke():
     print("[PASS] All 9 plot builders returned go.Figure successfully.")
 
 
+def test_suggest_orders_ar2():
+    """A3: Simulated AR(2) (phi = 0.6, 0.3, n=1000, seed 42) must give suggested_p == 2."""
+    print("\n--- 7. AR(2) Order Suggestion Test (A3) ---")
+    rng = np.random.default_rng(42)
+    n = 1000
+    eps = rng.normal(0, 1, n)
+    y = np.zeros(n)
+    for t in range(2, n):
+        y[t] = 0.6 * y[t - 1] + 0.3 * y[t - 2] + eps[t]
+
+    dates = pd.date_range("2000-01-01", periods=n, freq="D")
+    s = pd.Series(y, index=dates, name="ar2_sim")
+
+    res = compute_acf_pacf(s, nlags=15)
+    sugg = suggest_orders(res["acf"], res["pacf"], res["conf_bound"])
+
+    print(f"Computed suggested_p: {sugg['suggested_p']}, suggested_q: {sugg['suggested_q']}")
+    assert sugg["suggested_p"] == 2, f"Expected suggested_p == 2, got {sugg['suggested_p']}"
+    print("[PASS] A3 unit test passed: AR(2) simulated process gives suggested_p == 2.")
+
+
+def test_decompose_yearly_series():
+    """A4: Yearly series returns None for infer_period_from_frequency and decompose returns error string."""
+    print("\n--- 8. Yearly Series Decompose Test (A4) ---")
+    dates = pd.date_range("1990-01-01", periods=30, freq="YS")
+    s = pd.Series(np.linspace(10, 50, 30), index=dates, name="yearly_series")
+
+    inferred_p = infer_period_from_frequency(s)
+    print(f"infer_period_from_frequency for yearly series: {inferred_p}")
+    assert inferred_p is None, f"Expected None for yearly frequency, got {inferred_p}"
+
+    decomp = decompose(s)
+    print(f"Decomposition result error: {decomp.get('error')}")
+    assert decomp.get("error") is not None, "Expected error message when period cannot be inferred"
+    assert "explicit seasonal period" in decomp["error"], f"Unexpected error message: {decomp['error']}"
+    print("[PASS] A4 unit test passed: Yearly series returns None and decompose returns error string.")
+
+
 if __name__ == "__main__":
     print("==================================================")
     print("Starting ATSA Diagnostics & Visualization Tests...")
@@ -189,6 +228,9 @@ if __name__ == "__main__":
     test_transform_series()
     test_acf_nlags_capping()
     test_plots_smoke()
+    test_suggest_orders_ar2()
+    test_decompose_yearly_series()
     print("\n==================================================")
     print("ALL TESTS COMPLETED AND VERIFIED SUCCESSFULLY!")
     print("==================================================")
+

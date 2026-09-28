@@ -4,11 +4,13 @@ Data Ingestion and Preprocessing UI Tab for ATSA.
 Handles:
 - Uploading CSV/Excel files and loading reproducible demo data.
 - Column selection with date auto-detection and day-first toggle.
+- Exogenous regressors multiselection and alignment.
 - Preprocessing and regularization (duplicate aggregation, frequency alignment, missing data filling).
+- Data signature tracking for robust state invalidation across changes.
 - Session state caching and genuine widget clearing.
 """
 
-from typing import Optional
+from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -31,7 +33,7 @@ def create_demo_data() -> pd.DataFrame:
     Returns
     -------
     pd.DataFrame
-        Synthetic monthly dataset with date and numeric target columns.
+        Synthetic monthly dataset with date, numeric target, and exogenous feature columns.
     """
     rng = np.random.default_rng(42)
     dates = pd.date_range(start="2020-01-01", periods=48, freq="MS")
@@ -39,8 +41,15 @@ def create_demo_data() -> pd.DataFrame:
     seasonality = 15 * np.sin(2 * np.pi * np.arange(len(dates)) / 12)
     noise = rng.normal(0, 3, len(dates))
     values = np.round(trend + seasonality + noise, 2)
+    marketing_spend = np.round(20 + 0.3 * trend + rng.normal(0, 2, len(dates)), 2)
 
-    return pd.DataFrame({"Date": dates.strftime("%Y-%m-%d"), "Value": values})
+    return pd.DataFrame(
+        {
+            "Date": dates.strftime("%Y-%m-%d"),
+            "Sales": values,
+            "Marketing_Spend": marketing_spend,
+        }
+    )
 
 
 def clear_data_action() -> None:
@@ -51,12 +60,18 @@ def clear_data_action() -> None:
         "uploaded_file_id",
         "selected_date_col",
         "selected_target_col",
+        "selected_exog_cols",
+        "exog_df",
         "ts_series",
         "reg_report",
+        "data_signature",
         "model_series",
+        "model_base_series",
         "transform_info",
+        "model_results",
         "date_col_select",
         "target_col_select",
+        "exog_col_select",
         "freq_select",
         "fill_select",
     ]
@@ -68,7 +83,7 @@ def clear_data_action() -> None:
 
 
 def render_data_tab() -> None:
-    """Render the full Phase 1 Data Ingestion & Preprocessing tab."""
+    """Render the full Phase 1 Data Ingestion & Preprocessing tab with exog support."""
     st.markdown("### 📥 Dataset Ingestion & Configuration")
     st.markdown(
         "Upload a time series dataset (**CSV**, **XLSX**, or **XLS**) or load reproducible demo data to begin "
@@ -99,6 +114,7 @@ def render_data_tab() -> None:
             st.session_state.pop("uploaded_file_id", None)
             st.session_state.pop("date_col_select", None)
             st.session_state.pop("target_col_select", None)
+            st.session_state.pop("exog_col_select", None)
             st.rerun()
 
     with clear_col:
@@ -119,6 +135,7 @@ def render_data_tab() -> None:
                 # Reset column selection keys when a fresh file is loaded
                 st.session_state.pop("date_col_select", None)
                 st.session_state.pop("target_col_select", None)
+                st.session_state.pop("exog_col_select", None)
                 st.rerun()
             except Exception as err:
                 st.error(f"Failed to load uploaded file: {err}")
@@ -176,7 +193,7 @@ def render_data_tab() -> None:
             "Select Target Numeric Column:",
             options=target_candidates,
             index=default_target_idx,
-            help="Numeric series to analyze and visualize. Excludes the selected date column.",
+            help="Numeric series to analyze and model. Excludes the selected date column.",
             key="target_col_select",
         )
         st.session_state["selected_target_col"] = selected_target_col
@@ -191,11 +208,26 @@ def render_data_tab() -> None:
             key="dayfirst_checkbox",
         )
 
+    # Exogenous Regressor Selection
+    available_exog = [
+        c for c in (candidate_numerics if candidate_numerics else all_columns)
+        if c not in [selected_date_col, selected_target_col]
+    ]
+
+    selected_exog_cols = st.multiselect(
+        "Optional Exogenous Regressor Columns (for SARIMAX):",
+        options=available_exog,
+        default=[c for c in st.session_state.get("selected_exog_cols", []) if c in available_exog],
+        help="Select additional numeric driver columns to incorporate as external explanatory regressors.",
+        key="exog_col_select",
+    )
+    st.session_state["selected_exog_cols"] = selected_exog_cols
+
     if not selected_date_col or not selected_target_col:
         st.warning("Please ensure both a date column and a target numeric column are selected.")
         return
 
-    # Parse and prepare initial series
+    # Parse and prepare initial target series
     try:
         raw_series = prepare_time_series(
             df=raw_df,
@@ -249,7 +281,7 @@ def render_data_tab() -> None:
             key="fill_select",
         )
 
-    # Perform regularization
+    # Perform regularization on target series
     raw_freq_code = selected_freq_display.split()[0] if selected_freq_display != "Auto-detect" else None
     try:
         regularized_series, report = regularize_series(
@@ -261,14 +293,60 @@ def render_data_tab() -> None:
         st.error(f"Error during regularization: {reg_exc}")
         return
 
+    # Process exogenous features with identical regularization
+    if selected_exog_cols:
+        try:
+            exog_dict = {}
+            for exog_c in selected_exog_cols:
+                raw_exog_s = prepare_time_series(
+                    df=raw_df,
+                    date_col=selected_date_col,
+                    target_col=exog_c,
+                    sort_index=True,
+                    drop_na_dates=True,
+                    dayfirst=dayfirst,
+                )
+                reg_exog_s, _ = regularize_series(
+                    series=raw_exog_s,
+                    freq=raw_freq_code,
+                    fill_method=selected_fill,
+                )
+                exog_dict[exog_c] = reg_exog_s.reindex(regularized_series.index).ffill().bfill()
+            st.session_state["exog_df"] = pd.DataFrame(exog_dict, index=regularized_series.index)
+        except Exception as exog_exc:
+            st.warning(f"Could not regularize exogenous features: {exog_exc}")
+            st.session_state["exog_df"] = None
+    else:
+        st.session_state["exog_df"] = None
+
+    # Stale state & Data signature check
+    current_signature = (
+        source_name,
+        selected_date_col,
+        selected_target_col,
+        dayfirst,
+        selected_freq_display,
+        selected_fill,
+        tuple(sorted(selected_exog_cols)),
+    )
+
+    prev_signature = st.session_state.get("data_signature")
+    if prev_signature != current_signature:
+        st.session_state["data_signature"] = current_signature
+        st.session_state["model_series"] = regularized_series
+        st.session_state["model_base_series"] = regularized_series
+        st.session_state["transform_info"] = {
+            "steps": [],
+            "params": {},
+            "suggested_d": 0,
+            "suggested_D": 0,
+            "seasonal_period": None,
+        }
+        st.session_state["model_results"] = {}
+
     # Store analysis series and report in session state
     st.session_state["ts_series"] = regularized_series
     st.session_state["reg_report"] = report
-
-    # If model_series hasn't been set by transformations, default to the regularized series
-    if "model_series" not in st.session_state or st.session_state["model_series"] is None:
-        st.session_state["model_series"] = regularized_series
-        st.session_state["transform_info"] = {"steps": [], "params": {}}
 
     # Display Warning if resample fallback occurred
     if report.get("method") == "resample" and report.get("warning"):
@@ -293,7 +371,7 @@ def render_data_tab() -> None:
     m_col2.metric("Start Date", str(summary["start_date"])[:10])
     m_col3.metric("End Date", str(summary["end_date"])[:10])
     m_col4.metric("Frequency", str(summary["inferred_frequency"]))
-    m_col5.metric("Remaining NaNs", summary["missing_values"])
+    m_col5.metric("Exogenous Features", len(selected_exog_cols))
 
     # Tabs for interactive visualization, data table, and descriptive statistics
     tab_chart, tab_table, tab_stats = st.tabs(
@@ -313,6 +391,8 @@ def render_data_tab() -> None:
     with tab_table:
         st.markdown("#### Cleaned & Regularized Series (First 100 Observations)")
         preview_df = regularized_series.to_frame()
+        if st.session_state.get("exog_df") is not None:
+            preview_df = preview_df.join(st.session_state["exog_df"])
         st.dataframe(preview_df.head(100), width="stretch")
 
     with tab_stats:
