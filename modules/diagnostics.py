@@ -221,20 +221,25 @@ def suggest_orders(
     }
 
 
-def infer_period_from_frequency(series: pd.Series) -> Optional[int]:
+def infer_period_from_frequency(series: Union[pd.Series, pd.DatetimeIndex, str]) -> Optional[int]:
     """
     Infer canonical seasonal period integer from a series DatetimeIndex frequency
     using exact leading alphabetic token matching.
     """
-    if not isinstance(series.index, pd.DatetimeIndex):
+    if isinstance(series, str):
+        freq = series
+    elif isinstance(series, pd.DatetimeIndex):
+        freq = series.freqstr or pd.infer_freq(series)
+    elif isinstance(series, pd.Series) and isinstance(series.index, pd.DatetimeIndex):
+        freq = series.index.freqstr or pd.infer_freq(series.index)
+    else:
         return None
 
-    freq = series.index.freqstr or pd.infer_freq(series.index)
     if not freq:
         return None
 
     # Parse leading alphabetic token
-    match = re.match(r"^[A-Za-z]+", freq.strip())
+    match = re.match(r"^[A-Za-z]+", str(freq).strip())
     if not match:
         return None
 

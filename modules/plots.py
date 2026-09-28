@@ -446,7 +446,7 @@ def plot_lag(series: pd.Series, lag: int = 1) -> go.Figure:
             mode="markers",
             marker=dict(color="#2563eb", size=6, opacity=0.7),
             name=f"Lag {lag}",
-            hovertemplate="y(t-%{x}): %{x:.3f}<br>y(t): %{y:.3f}<extra></extra>",
+            hovertemplate=f"y(t-{lag}): %{{x:.3f}}<br>y(t): %{{y:.3f}}<extra></extra>",
         )
     )
 
@@ -1286,4 +1286,385 @@ def plot_grid_results(
     )
 
     return fig
+
+
+def plot_forecast_overlay(
+    actual: pd.Series,
+    forecasts: Dict[str, pd.DataFrame],
+    tail: Optional[int] = None,
+    show_bands_for: Optional[str] = None,
+) -> go.Figure:
+    """
+    Build overlay chart comparing ground-truth actuals against holdout forecasts from candidate models.
+    Actuals are styled in dark slate; candidate models are styled with distinct palette colors.
+    Optional 95% prediction interval band for one selected model.
+    """
+    palette = [
+        "#2563eb", "#059669", "#d97706", "#7c3aed",
+        "#db2777", "#0891b2", "#ea580c", "#4f46e5", "#16a34a", "#9333ea"
+    ]
+
+    act_slice = actual.iloc[-tail:] if (tail is not None and tail > 0) else actual
+    fig = go.Figure()
+
+    # Actuals
+    fig.add_trace(
+        go.Scatter(
+            x=act_slice.index,
+            y=act_slice.values,
+            mode="lines+markers",
+            marker=dict(size=4),
+            line=dict(color="#1e293b", width=2.5),
+            name="Actual Holdout",
+            hovertemplate="<b>Actual</b>: %{y:.3f}<br>%{x}<extra></extra>",
+        )
+    )
+
+    # Optional band
+    if show_bands_for and show_bands_for in forecasts:
+        band_df = forecasts[show_bands_for]
+        if "lower" in band_df.columns and "upper" in band_df.columns and band_df["lower"].notna().any():
+            fig.add_trace(
+                go.Scatter(
+                    x=band_df.index,
+                    y=band_df["lower"].values,
+                    mode="lines",
+                    line=dict(width=0),
+                    showlegend=False,
+                    hoverinfo="skip",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=band_df.index,
+                    y=band_df["upper"].values,
+                    mode="lines",
+                    line=dict(width=0),
+                    fill="tonexty",
+                    fillcolor="rgba(37, 99, 235, 0.15)",
+                    name=f"{show_bands_for} (95% CI)",
+                    hoverinfo="skip",
+                )
+            )
+
+    # Forecast mean lines
+    for idx, (label, fc_df) in enumerate(forecasts.items()):
+        if fc_df is None or fc_df.empty or "mean" not in fc_df.columns:
+            continue
+        c = palette[idx % len(palette)]
+        fig.add_trace(
+            go.Scatter(
+                x=fc_df.index,
+                y=fc_df["mean"].values,
+                mode="lines+markers",
+                marker=dict(size=4),
+                line=dict(color=c, width=2),
+                name=label,
+                hovertemplate=f"<b>{label}</b>: %{{y:.3f}}<br>%{{x}}<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        title="Model Forecasts vs Holdout Ground Truth",
+        xaxis_title="Date",
+        yaxis_title="Value",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig
+
+
+def plot_metric_bars(table: pd.DataFrame, metric: str = "RMSE") -> go.Figure:
+    """
+    Build horizontal bar chart comparing models on a specific accuracy metric.
+    Bars are sorted ascending, the best model is highlighted, and NaNs are skipped.
+    """
+    fig = go.Figure()
+    if table.empty:
+        fig.update_layout(template="plotly_white", title=f"Model Comparison by {metric}")
+        return fig
+
+    # Find matching metric column
+    target_col = None
+    for c in table.columns:
+        if c.upper() == metric.upper():
+            target_col = c
+            break
+
+    if target_col is None:
+        fig.update_layout(template="plotly_white", title=f"Metric '{metric}' not found in table")
+        return fig
+
+    valid = table.dropna(subset=[target_col]).copy()
+    if valid.empty:
+        fig.update_layout(template="plotly_white", title=f"No valid data for metric {metric}")
+        return fig
+
+    # Sort ascending so lowest error is at the top of horizontal bars
+    valid = valid.sort_values(by=target_col, ascending=False).reset_index(drop=True)
+    labels = valid["Model"].tolist()
+    vals = valid[target_col].tolist()
+
+    colors = ["#94a3b8"] * len(vals)
+    if len(colors) > 0:
+        colors[-1] = "#2563eb"  # best is the last one (lowest value)
+
+    fig.add_trace(
+        go.Bar(
+            x=vals,
+            y=labels,
+            orientation="h",
+            marker=dict(color=colors),
+            hovertemplate=f"<b>%{{y}}</b><br>{metric}: %{{x:.4f}}<extra></extra>",
+        )
+    )
+
+    fig.update_layout(
+        template="plotly_white",
+        title=f"Model Comparison: {metric.upper()} (Lower is Better)",
+        xaxis_title=metric.upper(),
+        yaxis_title="Model",
+        height=max(350, 30 * len(labels) + 100),
+        margin=dict(l=120, r=40, t=50, b=40),
+    )
+    return fig
+
+
+def plot_ic_bars(table: pd.DataFrame) -> go.Figure:
+    """
+    Build Information Criteria comparison bar chart grouped and faceted by IC_group.
+    Never mixes incompatible model classes (ARIMA vs ETS).
+    """
+    if table.empty:
+        fig = go.Figure()
+        fig.update_layout(template="plotly_white", title="Information Criteria Comparison")
+        return fig
+
+    # Filter to models with comparable IC groups
+    df_ic = table[table["IC_group"].notna() & (table["IC_group"] != "n/a")].copy()
+    df_ic = df_ic.dropna(subset=["AIC", "BIC"])
+
+    if df_ic.empty:
+        fig = go.Figure()
+        fig.update_layout(
+            template="plotly_white",
+            title="Information Criteria Comparison",
+            annotations=[
+                dict(
+                    text="No fitted models with comparable Information Criteria available.",
+                    xref="paper",
+                    yref="paper",
+                    x=0.5,
+                    y=0.5,
+                    showarrow=False,
+                    font=dict(size=14, color="#64748b"),
+                )
+            ],
+        )
+        return fig
+
+    groups = df_ic["IC_group"].unique()
+    n_groups = len(groups)
+
+    fig = make_subplots(
+        rows=n_groups,
+        cols=1,
+        shared_xaxes=False,
+        vertical_spacing=0.15,
+        subplot_titles=[f"IC Group: {g}" for g in groups],
+    )
+
+    for row_idx, grp in enumerate(groups, start=1):
+        sub_df = df_ic[df_ic["IC_group"] == grp].sort_values(by="AIC", ascending=True)
+        fig.add_trace(
+            go.Bar(
+                x=sub_df["AIC"],
+                y=sub_df["Model"],
+                orientation="h",
+                name="AIC",
+                marker_color="#2563eb",
+                showlegend=(row_idx == 1),
+                hovertemplate="<b>%{y}</b><br>AIC: %{x:.2f}<extra></extra>",
+            ),
+            row=row_idx,
+            col=1,
+        )
+        fig.add_trace(
+            go.Bar(
+                x=sub_df["BIC"],
+                y=sub_df["Model"],
+                orientation="h",
+                name="BIC",
+                marker_color="#059669",
+                showlegend=(row_idx == 1),
+                hovertemplate="<b>%{y}</b><br>BIC: %{x:.2f}<extra></extra>",
+            ),
+            row=row_idx,
+            col=1,
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        barmode="group",
+        title="Information Criteria (AIC & BIC) Ranked Within Groups",
+        height=max(400, 160 * n_groups + 100),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=120, r=40, t=60, b=40),
+    )
+    return fig
+
+
+def plot_error_by_horizon(errors: Dict[str, pd.Series]) -> go.Figure:
+    """
+    Plot absolute forecast error progression across each step of the holdout horizon (h = 1, 2, ...).
+    """
+    fig = go.Figure()
+    palette = [
+        "#2563eb", "#059669", "#d97706", "#7c3aed",
+        "#db2777", "#0891b2", "#ea580c", "#4f46e5", "#16a34a", "#9333ea"
+    ]
+
+    for idx, (label, err_s) in enumerate(errors.items()):
+        if err_s is None or len(err_s) == 0:
+            continue
+        h_steps = np.arange(1, len(err_s) + 1)
+        c = palette[idx % len(palette)]
+        fig.add_trace(
+            go.Scatter(
+                x=h_steps,
+                y=np.abs(err_s.values),
+                mode="lines+markers",
+                marker=dict(size=5),
+                line=dict(color=c, width=2),
+                name=label,
+                hovertemplate=f"<b>{label}</b><br>Step h=%{{x}}: Abs Error=%{{y:.3f}}<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        title="Forecast Error Growth by Horizon Step (h)",
+        xaxis_title="Horizon Step Ahead (h)",
+        yaxis_title="Absolute Error |y - ŷ|",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig
+
+
+def plot_future_forecast(
+    history: pd.Series,
+    forecast_df: pd.DataFrame,
+    label: str,
+    tail: Optional[int] = None,
+    holdout_forecast: Optional[pd.DataFrame] = None,
+) -> go.Figure:
+    """
+    Build out-of-sample forward projection plot showing history tail, forecast mean,
+    95% prediction intervals, and a vertical demarcation line at the forecast origin.
+    Uses add_shape (NOT add_vline with datetime) for compatibility and precision.
+    """
+    hist_slice = history.iloc[-tail:] if (tail is not None and tail > 0) else history.iloc[-min(len(history), 100):]
+
+    fig = go.Figure()
+
+    # Historical data trace
+    fig.add_trace(
+        go.Scatter(
+            x=hist_slice.index,
+            y=hist_slice.values,
+            mode="lines+markers",
+            marker=dict(size=4),
+            line=dict(color="#334155", width=2),
+            name="Historical Data",
+            hovertemplate="<b>History</b>: %{y:.3f}<br>%{x}<extra></extra>",
+        )
+    )
+
+    # Optional holdout overlay for context
+    if holdout_forecast is not None and not holdout_forecast.empty and "mean" in holdout_forecast.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=holdout_forecast.index,
+                y=holdout_forecast["mean"].values,
+                mode="lines",
+                line=dict(color="#94a3b8", width=1.5, dash="dash"),
+                name="Holdout Validation",
+                hovertemplate="<b>Holdout</b>: %{y:.3f}<extra></extra>",
+            )
+        )
+
+    # Prediction Interval Band
+    if "lower" in forecast_df.columns and "upper" in forecast_df.columns and forecast_df["lower"].notna().any():
+        fig.add_trace(
+            go.Scatter(
+                x=forecast_df.index,
+                y=forecast_df["lower"].values,
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=forecast_df.index,
+                y=forecast_df["upper"].values,
+                mode="lines",
+                line=dict(width=0),
+                fill="tonexty",
+                fillcolor="rgba(37, 99, 235, 0.15)",
+                name="95% Prediction Interval",
+                hoverinfo="skip",
+            )
+        )
+
+    # Future Mean Forecast
+    if "mean" in forecast_df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=forecast_df.index,
+                y=forecast_df["mean"].values,
+                mode="lines+markers",
+                marker=dict(size=5, color="#2563eb"),
+                line=dict(color="#2563eb", width=2.5),
+                name=f"{label} Forecast",
+                hovertemplate=f"<b>{label}</b>: %{{y:.3f}}<br>%{{x}}<extra></extra>",
+            )
+        )
+
+    # Vertical demarcation line at forecast origin using add_shape
+    origin_x = forecast_df.index[0]
+    fig.add_shape(
+        type="line",
+        x0=origin_x,
+        x1=origin_x,
+        y0=0,
+        y1=1,
+        yref="paper",
+        line=dict(color="#ef4444", width=2, dash="dash"),
+    )
+
+    fig.add_annotation(
+        x=origin_x,
+        y=1.0,
+        yref="paper",
+        text="Forecast Origin",
+        showarrow=False,
+        xanchor="left",
+        yanchor="bottom",
+        font=dict(color="#ef4444", size=11, family="sans-serif"),
+    )
+
+    fig.update_layout(
+        template="plotly_white",
+        title=f"Out-of-Sample Forward Forecast: {label}",
+        xaxis_title="Date",
+        yaxis_title="Value",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig
+
 

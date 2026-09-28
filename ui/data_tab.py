@@ -24,6 +24,7 @@ from modules.data_loader import (
     regularize_series,
 )
 from modules.plots import plot_time_series
+from ui.model_common import reset_model_widgets
 
 
 def create_demo_data() -> pd.DataFrame:
@@ -69,6 +70,8 @@ def clear_data_action() -> None:
         "model_base_series",
         "transform_info",
         "model_results",
+        "forecast_results",
+        "pending_spec",
         "date_col_select",
         "target_col_select",
         "exog_col_select",
@@ -78,6 +81,7 @@ def clear_data_action() -> None:
     for key in keys_to_clear:
         st.session_state.pop(key, None)
 
+    reset_model_widgets()
     # Increment uploader key so file_uploader widget is cleanly reset
     st.session_state["uploader_key"] = st.session_state.get("uploader_key", 0) + 1
 
@@ -343,6 +347,8 @@ def render_data_tab() -> None:
             "seasonal_period": None,
         }
         st.session_state["model_results"] = {}
+        st.session_state["forecast_results"] = {}
+        reset_model_widgets()
 
     # Store analysis series and report in session state
     st.session_state["ts_series"] = regularized_series

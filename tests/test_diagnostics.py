@@ -218,6 +218,25 @@ def test_decompose_yearly_series():
     print("[PASS] A4 unit test passed: Yearly series returns None and decompose returns error string.")
 
 
+def test_infer_period_from_frequency_exact_tokens():
+    """0.1: infer_period_from_frequency exact token test: MS->12, min->None, YS->None."""
+    print("\n--- 9. Infer Period Exact Tokens Test (0.1) ---")
+    assert infer_period_from_frequency("MS") == 12
+    assert infer_period_from_frequency("min") is None
+    assert infer_period_from_frequency("YS") is None
+
+    # Also test via pd.Series with DatetimeIndex
+    s_ms = pd.Series(range(10), index=pd.date_range("2020-01-01", periods=10, freq="MS"))
+    assert infer_period_from_frequency(s_ms) == 12
+
+    s_ys = pd.Series(range(10), index=pd.date_range("2020-01-01", periods=10, freq="YS"))
+    assert infer_period_from_frequency(s_ys) is None
+
+    s_min = pd.Series(range(10), index=pd.date_range("2020-01-01", periods=10, freq="min"))
+    assert infer_period_from_frequency(s_min) is None
+    print("[PASS] 0.1 exact token assertions passed: MS->12, min->None, YS->None.")
+
+
 if __name__ == "__main__":
     print("==================================================")
     print("Starting ATSA Diagnostics & Visualization Tests...")
@@ -230,7 +249,9 @@ if __name__ == "__main__":
     test_plots_smoke()
     test_suggest_orders_ar2()
     test_decompose_yearly_series()
+    test_infer_period_from_frequency_exact_tokens()
     print("\n==================================================")
     print("ALL TESTS COMPLETED AND VERIFIED SUCCESSFULLY!")
     print("==================================================")
+
 

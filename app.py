@@ -12,6 +12,7 @@ import streamlit as st
 
 from ui.data_tab import render_data_tab
 from ui.eda_tab import render_eda_tab
+from ui.forecast_tab import render_forecast_tab
 from ui.models_tab import render_models_tab
 
 
@@ -29,7 +30,7 @@ def render_sidebar() -> None:
         - **Phase 2 EDA & Diagnostics (stationarity, ACF/PACF, decomposition)** `[Active]`
         - **Phase 3 Model Zoo (AR, MA, ARMA, ARIMA, SARIMA, SARIMAX, Holt-Winters)** `[Active]`
         - **Phase 4 Model Selector UI with per-model plots** `[Active]`
-        - **Phase 5 Forecast & Metrics Comparison** `[Upcoming]`
+        - **Phase 5 Forecast & Metrics Comparison** `[Active]`
         - **Phase 6 Deployment** `[Upcoming]`
         - **Phase 7 Polish** `[Upcoming]`
         """
@@ -37,7 +38,7 @@ def render_sidebar() -> None:
 
     st.sidebar.markdown("---")
     st.sidebar.info(
-        "💡 **Phases 1-4 Active**: Navigate between **📥 Data**, **🔍 EDA & Diagnostics**, and **🧮 Models** using the tabs above."
+        "💡 **Phases 1-5 Active**: Navigate between **📥 Data**, **🔍 EDA & Diagnostics**, **🧮 Models**, and **🔮 Forecast & Compare** using the tabs above."
     )
 
 
@@ -63,7 +64,9 @@ def init_session_state() -> None:
             "seasonal_period": None,
         },
         "model_results": {},
-        "selected_model_family": "arima",
+        "forecast_results": {},
+        "pending_spec": None,
+        "selected_model_family": None,
         "uploader_key": 0,
     }
     for key, val in defaults.items():
@@ -87,7 +90,9 @@ def main() -> None:
     st.caption("End-to-End Time Series Modeling & Diagnostic Platform")
 
     # Primary Tab Router
-    tab_data, tab_eda, tab_models = st.tabs(["📥 Data", "🔍 EDA & Diagnostics", "🧮 Models"])
+    tab_data, tab_eda, tab_models, tab_forecast = st.tabs(
+        ["📥 Data", "🔍 EDA & Diagnostics", "🧮 Models", "🔮 Forecast & Compare"]
+    )
 
     with tab_data:
         render_data_tab()
@@ -98,6 +103,10 @@ def main() -> None:
     with tab_models:
         render_models_tab()
 
+    with tab_forecast:
+        render_forecast_tab()
+
 
 if __name__ == "__main__":
     main()
+

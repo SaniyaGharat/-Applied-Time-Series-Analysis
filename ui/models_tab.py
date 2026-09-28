@@ -40,54 +40,23 @@ from modules.plots import (
     plot_residual_diagnostics,
     plot_theoretical_vs_empirical,
 )
-
-
-@st.cache_data
-def cached_fit_model(
-    y: pd.Series,
-    spec: Dict[str, Any],
-    test_size: int,
-    transform_info: Optional[Dict[str, Any]],
-    exog: Optional[pd.DataFrame],
-    m: Optional[int],
-) -> ModelResult:
-    """UI cache wrapper for deterministic model fitting."""
-    return fit_model(
-        y=y,
-        spec=spec,
-        test_size=test_size,
-        transform_info=transform_info,
-        exog=exog,
-        m=m,
-    )
-
-
-@st.cache_data
-def cached_grid_search(
-    y: pd.Series,
-    p_range: List[int],
-    d: int,
-    q_range: List[int],
-    seasonal: Optional[Dict[str, Any]],
-    test_size: int,
-    max_models: int = 60,
-    criterion: str = "aic",
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    """UI cache wrapper for ARIMA/SARIMA grid search."""
-    return grid_search_arima(
-        y=y,
-        p_range=p_range,
-        d=d,
-        q_range=q_range,
-        seasonal=seasonal,
-        test_size=test_size,
-        max_models=max_models,
-        criterion=criterion,
-    )
+from ui.model_common import (
+    cached_fit_model,
+    cached_grid_search,
+    compute_suggested_specs,
+    fit_all_default_models,
+    reset_model_widgets,
+)
 
 
 def render_models_tab() -> None:
     """Render the full Phase 4 Model Selector & Diagnostic Workspace."""
+    # A1: Process pending spec before any widget is created
+    if "pending_spec" in st.session_state and st.session_state["pending_spec"]:
+        pending = st.session_state.pop("pending_spec")
+        for k, v in pending.items():
+            st.session_state[k] = v
+
     ts_series = st.session_state.get("ts_series")
     model_base_series = st.session_state.get("model_base_series")
     transform_info = st.session_state.get("transform_info", {})
@@ -123,6 +92,12 @@ def render_models_tab() -> None:
     suggested_D = transform_info.get("suggested_D", 0)
     inferred_m = transform_info.get("seasonal_period") or infer_period_from_frequency(ts_series) or 12
 
+    # A2: Stale widget reset when transform suggestions differ from last seen
+    curr_suggestions = (suggested_d, suggested_D, inferred_m)
+    if st.session_state.get("_last_transform_suggestions") != curr_suggestions:
+        reset_model_widgets()
+        st.session_state["_last_transform_suggestions"] = curr_suggestions
+
     st.info(
         f"🎯 **Active Modeling Pipeline**: `{steps_txt}` | "
         f"Differencing orders for models: **d={suggested_d}, D={suggested_D}** (m={inferred_m})\n\n"
@@ -130,35 +105,50 @@ def render_models_tab() -> None:
         f"and MAPE is unreliable when the series crosses or is near zero.*"
     )
 
-    # 3. Global Estimation Controls (Holdout & Seasonal Period)
+    # 3. Global Estimation Controls (Holdout & Seasonal Period & MASE scale)
     ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([1.5, 1.5, 3])
     with ctrl_col1:
         max_test = max(1, int(0.3 * n))
-        def_test = default_test_size(n, inferred_m)
+        def_test = min(max_test, max(1, default_test_size(n, inferred_m)))
+        curr_holdout = st.session_state.get("model_holdout_size_input", def_test)
+        curr_holdout = min(max_test, max(1, int(curr_holdout)))
+        st.session_state["model_holdout_size_input"] = curr_holdout
         holdout_size = st.number_input(
             "Holdout Test Size (N obs):",
             min_value=1,
             max_value=max_test,
-            value=min(def_test, max_test),
             step=1,
             help="Number of points held out at the end of the series to validate forecast accuracy.",
             key="model_holdout_size_input",
         )
 
     with ctrl_col2:
+        max_m = max(2, n // 2)
+        def_m = min(max_m, max(2, int(inferred_m)))
+        curr_m = st.session_state.get("model_m_input", def_m)
+        curr_m = min(max_m, max(2, int(curr_m)))
+        st.session_state["model_m_input"] = curr_m
         active_m = st.number_input(
             "Seasonal Period (m):",
             min_value=2,
-            max_value=max(3, n // 2),
-            value=int(inferred_m),
+            max_value=max_m,
             step=1,
             help="Length of seasonal cycle (e.g. 12 for monthly, 4 for quarterly, 7 for daily).",
             key="model_m_input",
         )
 
     with ctrl_col3:
-        st.write("")
-        st.caption(f"Series length: **{n}** obs | Training set: **{n - holdout_size}** obs | Test holdout: **{holdout_size}** obs")
+        mase_opts = ["1 (non-seasonal naive)", "m (seasonal naive)"]
+        def_mase = "m (seasonal naive)" if active_m >= 2 else "1 (non-seasonal naive)"
+        st.session_state.setdefault("mase_scale_select", def_mase)
+        mase_choice = st.selectbox(
+            "MASE scale:",
+            options=mase_opts,
+            help="Benchmark naive denominator for MASE calculation.",
+            key="mase_scale_select",
+        )
+        mase_m = int(active_m) if "m" in mase_choice and active_m >= 2 else 1
+        st.caption(f"Series: **{n}** obs | Train: **{n - holdout_size}** obs | Test: **{holdout_size}** obs | MASE scale m=**{mase_m}**")
 
     st.markdown("---")
 
@@ -191,18 +181,22 @@ def render_models_tab() -> None:
     }
     key_to_label = {v: k for k, v in label_to_key.items()}
 
-    current_family_key = st.session_state.get("selected_model_family", "arima")
-    current_label = key_to_label.get(current_family_key, "ARIMA")
+    current_family_key = st.session_state.get("selected_model_family", None)
+    current_label = key_to_label.get(current_family_key)
 
     # Support ATSA_TEST fallback for automated AppTest runner
     use_fallback = os.environ.get("ATSA_TEST") == "1" or not hasattr(st, "pills")
     if use_fallback:
+        fallback_options = ["(Select a model family)"] + family_labels
+        idx = fallback_options.index(current_label) if current_label in fallback_options else 0
         chosen_label = st.selectbox(
             "Model Family:",
-            options=family_labels,
-            index=family_labels.index(current_label) if current_label in family_labels else family_labels.index("ARIMA"),
+            options=fallback_options,
+            index=idx,
             key="model_family_fallback",
         )
+        if chosen_label == "(Select a model family)":
+            chosen_label = None
     else:
         chosen_pill = st.pills(
             "Choose a forecasting architecture:",
@@ -211,10 +205,14 @@ def render_models_tab() -> None:
             default=current_label,
             key="model_family_select",
         )
-        chosen_label = chosen_pill or current_label
+        chosen_label = chosen_pill
 
-    selected_family = label_to_key.get(chosen_label, "arima")
+    selected_family = label_to_key.get(chosen_label)
     st.session_state["selected_model_family"] = selected_family
+
+    if not selected_family:
+        st.info("👆 Please select a forecasting model family above to begin configuration and estimation.")
+        return
 
     fam_meta = next((f for f in all_families if f["key"] == selected_family), None)
     if fam_meta:
@@ -249,65 +247,88 @@ def render_models_tab() -> None:
         if selected_family == "ar":
             c1, c2, c3 = st.columns(3)
             with c1:
-                spec["p"] = st.number_input("AR Order (p):", min_value=1, max_value=10, value=int(st.session_state.get("form_ar_p", suggested_p)), step=1, key="form_ar_p")
+                st.session_state.setdefault("form_ar_p", int(suggested_p))
+                spec["p"] = st.number_input("AR Order (p):", min_value=1, max_value=10, step=1, key="form_ar_p")
             with c2:
-                spec["d"] = st.number_input("d (0 if series is stationary):", min_value=0, max_value=2, value=int(st.session_state.get("form_ar_d", suggested_d)), step=1, key="form_ar_d")
+                st.session_state.setdefault("form_ar_d", int(suggested_d))
+                spec["d"] = st.number_input("d (0 if series is stationary):", min_value=0, max_value=2, step=1, key="form_ar_d")
             with c3:
-                spec["trend"] = st.selectbox("Trend Component:", options=["c", "n", "t", "ct"], index=0 if spec["d"] == 0 else 1, key="form_ar_trend")
+                st.session_state.setdefault("form_ar_trend", "c" if int(st.session_state.get("form_ar_d", suggested_d)) == 0 else "n")
+                spec["trend"] = st.selectbox("Trend Component:", options=["c", "n", "t", "ct"], key="form_ar_trend")
 
         elif selected_family == "ma":
             c1, c2, c3 = st.columns(3)
             with c1:
-                spec["q"] = st.number_input("MA Order (q):", min_value=1, max_value=10, value=int(st.session_state.get("form_ma_q", suggested_q)), step=1, key="form_ma_q")
+                st.session_state.setdefault("form_ma_q", int(suggested_q))
+                spec["q"] = st.number_input("MA Order (q):", min_value=1, max_value=10, step=1, key="form_ma_q")
             with c2:
-                spec["d"] = st.number_input("d (0 if series is stationary):", min_value=0, max_value=2, value=int(st.session_state.get("form_ma_d", suggested_d)), step=1, key="form_ma_d")
+                st.session_state.setdefault("form_ma_d", int(suggested_d))
+                spec["d"] = st.number_input("d (0 if series is stationary):", min_value=0, max_value=2, step=1, key="form_ma_d")
             with c3:
-                spec["trend"] = st.selectbox("Trend Component:", options=["c", "n", "t", "ct"], index=0 if spec["d"] == 0 else 1, key="form_ma_trend")
+                st.session_state.setdefault("form_ma_trend", "c" if int(st.session_state.get("form_ma_d", suggested_d)) == 0 else "n")
+                spec["trend"] = st.selectbox("Trend Component:", options=["c", "n", "t", "ct"], key="form_ma_trend")
 
         elif selected_family == "arma":
             c1, c2, c3 = st.columns(3)
             with c1:
-                spec["p"] = st.number_input("AR Order (p):", min_value=1, max_value=10, value=int(st.session_state.get("form_arma_p", suggested_p)), step=1, key="form_arma_p")
+                st.session_state.setdefault("form_arma_p", int(suggested_p))
+                spec["p"] = st.number_input("AR Order (p):", min_value=1, max_value=10, step=1, key="form_arma_p")
             with c2:
-                spec["q"] = st.number_input("MA Order (q):", min_value=1, max_value=10, value=int(st.session_state.get("form_arma_q", suggested_q)), step=1, key="form_arma_q")
+                st.session_state.setdefault("form_arma_q", int(suggested_q))
+                spec["q"] = st.number_input("MA Order (q):", min_value=1, max_value=10, step=1, key="form_arma_q")
             with c3:
-                spec["d"] = st.number_input("d (0 if series is stationary):", min_value=0, max_value=2, value=int(st.session_state.get("form_arma_d", suggested_d)), step=1, key="form_arma_d")
+                st.session_state.setdefault("form_arma_d", 0)
+                spec["d"] = st.number_input("d (0 if series is stationary):", min_value=0, max_value=2, step=1, key="form_arma_d")
 
         elif selected_family == "arima":
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                spec["p"] = st.number_input("AR Order (p):", min_value=0, max_value=10, value=int(st.session_state.get("form_arima_p", suggested_p)), step=1, key="form_arima_p")
+                st.session_state.setdefault("form_arima_p", int(suggested_p))
+                spec["p"] = st.number_input("AR Order (p):", min_value=0, max_value=10, step=1, key="form_arima_p")
             with c2:
-                spec["d"] = st.number_input("Integration Order (d):", min_value=0, max_value=2, value=int(st.session_state.get("form_arima_d", suggested_d)), step=1, key="form_arima_d")
+                st.session_state.setdefault("form_arima_d", int(suggested_d))
+                spec["d"] = st.number_input("Integration Order (d):", min_value=0, max_value=2, step=1, key="form_arima_d")
             with c3:
-                spec["q"] = st.number_input("MA Order (q):", min_value=0, max_value=10, value=int(st.session_state.get("form_arima_q", suggested_q)), step=1, key="form_arima_q")
+                st.session_state.setdefault("form_arima_q", int(suggested_q))
+                spec["q"] = st.number_input("MA Order (q):", min_value=0, max_value=10, step=1, key="form_arima_q")
             with c4:
-                spec["trend"] = st.selectbox("Trend Component:", options=["c", "n", "t", "ct"], index=0 if spec["d"] == 0 else 1, key="form_arima_trend")
+                st.session_state.setdefault("form_arima_trend", "c" if int(st.session_state.get("form_arima_d", suggested_d)) == 0 else "n")
+                spec["trend"] = st.selectbox("Trend Component:", options=["c", "n", "t", "ct"], key="form_arima_trend")
 
         elif selected_family in ["sarima", "sarimax"]:
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                spec["p"] = st.number_input("AR Order (p):", min_value=0, max_value=10, value=int(st.session_state.get("form_s_p", suggested_p)), step=1, key="form_s_p")
-                spec["P"] = st.number_input("Seasonal AR (P):", min_value=0, max_value=3, value=int(st.session_state.get("form_s_P", 0 if suggested_D == 1 else 1)), step=1, key="form_s_P")
+                st.session_state.setdefault("form_s_p", int(suggested_p))
+                spec["p"] = st.number_input("AR Order (p):", min_value=0, max_value=10, step=1, key="form_s_p")
+                st.session_state.setdefault("form_s_P", 1 if suggested_D == 0 else 0)
+                spec["P"] = st.number_input("Seasonal AR (P):", min_value=0, max_value=3, step=1, key="form_s_P")
             with c2:
-                spec["d"] = st.number_input("Integration Order (d):", min_value=0, max_value=2, value=int(st.session_state.get("form_s_d", suggested_d)), step=1, key="form_s_d")
-                spec["D"] = st.number_input("Seasonal Diff (D):", min_value=0, max_value=2, value=int(st.session_state.get("form_s_D", suggested_D)), step=1, key="form_s_D")
+                st.session_state.setdefault("form_s_d", int(suggested_d))
+                spec["d"] = st.number_input("Integration Order (d):", min_value=0, max_value=2, step=1, key="form_s_d")
+                st.session_state.setdefault("form_s_D", int(suggested_D))
+                spec["D"] = st.number_input("Seasonal Diff (D):", min_value=0, max_value=2, step=1, key="form_s_D")
             with c3:
-                spec["q"] = st.number_input("MA Order (q):", min_value=0, max_value=10, value=int(st.session_state.get("form_s_q", suggested_q)), step=1, key="form_s_q")
-                spec["Q"] = st.number_input("Seasonal MA (Q):", min_value=0, max_value=3, value=int(st.session_state.get("form_s_Q", 1)), step=1, key="form_s_Q")
+                st.session_state.setdefault("form_s_q", 0 if suggested_D == 0 else int(suggested_q))
+                spec["q"] = st.number_input("MA Order (q):", min_value=0, max_value=10, step=1, key="form_s_q")
+                st.session_state.setdefault("form_s_Q", 0 if suggested_D == 0 else 1)
+                spec["Q"] = st.number_input("Seasonal MA (Q):", min_value=0, max_value=3, step=1, key="form_s_Q")
             with c4:
                 spec["m"] = int(active_m)
-                spec["trend"] = st.selectbox("Trend Component:", options=["c", "n", "t", "ct"], index=0 if spec["d"] == 0 and spec["D"] == 0 else 1, key="form_s_trend")
+                st.session_state.setdefault("form_s_trend", "c" if (suggested_d == 0 and suggested_D == 0) else "n")
+                spec["trend"] = st.selectbox("Trend Component:", options=["c", "n", "t", "ct"], key="form_s_trend")
 
         elif selected_family == "holt_winters":
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                trend_opt = st.selectbox("Trend Type:", options=["None", "add", "mul"], index=1, key="form_hw_trend")
+                st.session_state.setdefault("form_hw_trend", "add")
+                trend_opt = st.selectbox("Trend Type:", options=["None", "add", "mul"], key="form_hw_trend")
                 spec["trend"] = None if trend_opt == "None" else trend_opt
             with c2:
-                spec["damped"] = st.checkbox("Damped Trend", value=False, key="form_hw_damped")
+                st.session_state.setdefault("form_hw_damped", False)
+                spec["damped"] = st.checkbox("Damped Trend", key="form_hw_damped")
             with c3:
-                seas_opt = st.selectbox("Seasonal Type:", options=["None", "add", "mul"], index=1, key="form_hw_seas")
+                st.session_state.setdefault("form_hw_seas", "add")
+                seas_opt = st.selectbox("Seasonal Type:", options=["None", "add", "mul"], key="form_hw_seas")
                 spec["seasonal"] = None if seas_opt == "None" else seas_opt
             with c4:
                 spec["m"] = int(active_m)
@@ -330,6 +351,7 @@ def render_models_tab() -> None:
             transform_info=transform_info,
             exog=exog_df if selected_family == "sarimax" else None,
             m=active_m,
+            mase_m=mase_m,
         )
 
     # Store in session state registry
@@ -641,18 +663,20 @@ def render_models_tab() -> None:
 
                 if st.button("Use best order", help="Inject best hyperparameters into form widgets."):
                     best_s = best_info["best_spec"]
+                    pending = {}
                     if selected_family == "arima":
-                        st.session_state["form_arima_p"] = best_s.get("p", 1)
-                        st.session_state["form_arima_d"] = best_s.get("d", 0)
-                        st.session_state["form_arima_q"] = best_s.get("q", 1)
-                    elif selected_family == "sarima":
-                        st.session_state["form_s_p"] = best_s.get("p", 1)
-                        st.session_state["form_s_d"] = best_s.get("d", 0)
-                        st.session_state["form_s_q"] = best_s.get("q", 1)
-                        st.session_state["form_s_P"] = best_s.get("P", 0)
-                        st.session_state["form_s_D"] = best_s.get("D", 0)
-                        st.session_state["form_s_Q"] = best_s.get("Q", 1)
-                    st.toast(f"Applied best spec {best_info['best_spec_str']}!", icon="✨")
+                        pending["form_arima_p"] = int(best_s.get("p", 1))
+                        pending["form_arima_d"] = int(best_s.get("d", 0))
+                        pending["form_arima_q"] = int(best_s.get("q", 1))
+                    elif selected_family in ("sarima", "sarimax"):
+                        pending["form_s_p"] = int(best_s.get("p", 1))
+                        pending["form_s_d"] = int(best_s.get("d", 0))
+                        pending["form_s_q"] = int(best_s.get("q", 1))
+                        pending["form_s_P"] = int(best_s.get("P", 0))
+                        pending["form_s_D"] = int(best_s.get("D", 0))
+                        pending["form_s_Q"] = int(best_s.get("Q", 1))
+                    st.session_state["pending_spec"] = pending
+                    st.toast(f"Staged best spec {best_info['best_spec_str']} for update!", icon="✨")
                     st.rerun()
 
     # -------------------------------------------------------------
@@ -666,61 +690,28 @@ def render_models_tab() -> None:
         )
 
         if st.button("Fit all models"):
-            results_list = []
-            families_to_fit = [f for f in all_families]
             progress_bar = st.progress(0.0)
-
-            for idx, fam in enumerate(families_to_fit):
-                fam_key = fam["key"]
-                spec_to_fit = dict(fam["default_spec"])
-
-                # Skip sarimax if no exogenous data
-                if fam_key == "sarimax" and (exog_df is None or exog_df.empty):
-                    progress_bar.progress((idx + 1) / len(families_to_fit))
-                    continue
-
-                # Skip seasonal families if m < 2 or series too short
-                if fam_key in ["seasonal_naive", "sarima", "holt_winters"] and (int(active_m) < 2 or len(model_base_series) < 2 * int(active_m)):
-                    progress_bar.progress((idx + 1) / len(families_to_fit))
-                    continue
-
-                # Adjust suggested differencing for arima/sarima
-                if fam_key in ["ar", "ma", "arma", "arima", "sarima", "sarimax"]:
-                    spec_to_fit["d"] = suggested_d
-                if fam_key in ["sarima", "sarimax"]:
-                    spec_to_fit["D"] = suggested_D
-                    spec_to_fit["m"] = int(active_m)
-                if fam_key in ["seasonal_naive", "holt_winters"]:
-                    spec_to_fit["m"] = int(active_m)
-
-                try:
-                    res_bench = cached_fit_model(
-                        y=model_base_series,
-                        spec=spec_to_fit,
-                        test_size=holdout_size,
-                        transform_info=transform_info,
-                        exog=exog_df if fam_key == "sarimax" else None,
-                        m=active_m,
-                    )
-                    st.session_state["model_results"][res_bench.key] = res_bench
-
-                    ic_b = res_bench.information_criteria or {}
-                    results_list.append(
-                        {
-                            "Model": res_bench.label,
-                            "Converged": res_bench.converged,
-                            "Test RMSE": res_bench.metrics_test["rmse"],
-                            "MAPE": res_bench.metrics_test["mape"],
-                            "AIC": ic_b.get("aic"),
-                            "BIC": ic_b.get("bic"),
-                        }
-                    )
-                except Exception:
-                    pass
-
-                progress_bar.progress((idx + 1) / len(families_to_fit))
-
-            if results_list:
+            fitted_all = fit_all_default_models(
+                model_base_series=model_base_series,
+                holdout_size=holdout_size,
+                m=int(active_m),
+                mase_m=mase_m,
+                transform_info=transform_info,
+                exog_df=exog_df,
+                progress_callback=lambda p: progress_bar.progress(p),
+            )
+            if fitted_all:
+                results_list = [
+                    {
+                        "Model": r.label,
+                        "Converged": r.converged,
+                        "Test RMSE": r.metrics_test["rmse"],
+                        "MAPE": r.metrics_test["mape"],
+                        "AIC": (r.information_criteria or {}).get("aic"),
+                        "BIC": (r.information_criteria or {}).get("bic"),
+                    }
+                    for r in fitted_all
+                ]
                 bench_df = pd.DataFrame(results_list).sort_values(by="Test RMSE", ascending=True).reset_index(drop=True)
                 st.session_state["benchmark_df"] = bench_df
 

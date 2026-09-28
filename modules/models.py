@@ -58,6 +58,24 @@ class ModelResult:
     fit_seconds: float = 0.0
     notes: str = ""
     extras: Dict[str, Any] = field(default_factory=dict)
+    test_actual: Optional[pd.Series] = None
+
+
+@dataclass
+class ForecastResult:
+    """
+    Standardized container for full-dataset forecasts and estimation metadata.
+    """
+    df: pd.DataFrame
+    label: str
+    spec: Dict[str, Any]
+    converged: bool
+    warnings: List[str]
+    notes: str
+    fit_seconds: float
+    n_train: int
+    last_train_date: Any
+    transform_steps: List[str]
 
 
 def make_model_key(
@@ -67,6 +85,7 @@ def make_model_key(
     exog_cols: Optional[Union[Tuple[str, ...], List[str]]],
     n_obs: int,
     last_date: Any,
+    mase_m: int = 1,
 ) -> str:
     """
     Generate a deterministic 12-character MD5 hash key for model cache indexing.
@@ -85,6 +104,8 @@ def make_model_key(
         Total number of observations in series.
     last_date : Any
         Last timestamp in the series.
+    mase_m : int, default=1
+        Seasonal period used for MASE scale baseline.
 
     Returns
     -------
@@ -98,6 +119,7 @@ def make_model_key(
         "exog_cols": sorted(list(exog_cols)) if exog_cols else [],
         "n_obs": int(n_obs),
         "last_date": str(last_date),
+        "mase_m": int(mase_m or 1),
     }
     encoded = json.dumps(key_dict, sort_keys=True, default=str).encode("utf-8")
     return hashlib.md5(encoded).hexdigest()[:12]
@@ -232,6 +254,7 @@ def _build_failed_result(
     test_idx: Any,
     error_message: str,
     extras: Optional[Dict[str, Any]] = None,
+    test_actual: Optional[pd.Series] = None,
 ) -> ModelResult:
     """Construct a clean, non-raising failed ModelResult container."""
     empty_series = pd.Series(dtype=float, index=train_idx)
@@ -267,6 +290,7 @@ def _build_failed_result(
         fit_seconds=0.0,
         notes="Failed before or during model estimation.",
         extras=extras or {},
+        test_actual=test_actual,
     )
 
 
@@ -277,6 +301,7 @@ def fit_model(
     transform_info: Optional[Dict[str, Any]] = None,
     exog: Optional[pd.DataFrame] = None,
     m: Optional[int] = None,
+    mase_m: int = 1,
 ) -> ModelResult:
     """
     Unified, fail-safe estimation interface for all supported ATSA model families.
@@ -295,6 +320,8 @@ def fit_model(
         Exogenous feature regressors aligned with y index.
     m : Optional[int]
         Seasonal period length override.
+    mase_m : int, default=1
+        Seasonal period used exclusively for computing the in-sample MASE scaling denominator.
 
     Returns
     -------
@@ -314,6 +341,7 @@ def fit_model(
         exog_cols=exog_cols,
         n_obs=n,
         last_date=clean_y.index[-1] if len(clean_y) > 0 else 0,
+        mase_m=mase_m,
     )
     default_label = family.upper()
 
@@ -685,6 +713,8 @@ def fit_model(
 
         train_y_orig = inverse_variance_transform(train_y, transform_info)
         test_y_orig = inverse_variance_transform(test_y, transform_info)
+        if not isinstance(test_y_orig, pd.Series):
+            test_y_orig = pd.Series(test_y_orig, index=test_idx)
 
         test_forecast_df = pd.DataFrame(
             {
@@ -695,7 +725,7 @@ def fit_model(
             index=test_idx,
         )
 
-        metrics_test = accuracy_table(test_y_orig, fc_mean_orig, y_train=train_y_orig, m=m_val or 1)
+        metrics_test = accuracy_table(test_y_orig, fc_mean_orig, y_train=train_y_orig, m=mase_m)
         metrics_train = {
             "rmse": rmse(train_y_orig, fitted_train_orig),
             "mae": mae(train_y_orig, fitted_train_orig),
@@ -725,10 +755,12 @@ def fit_model(
             fit_seconds=fit_dur,
             notes=notes,
             extras=extras,
+            test_actual=test_y_orig,
         )
 
     except Exception as exc:
-        return _build_failed_result(key, default_label, family, spec, train_idx, test_idx, str(exc))
+        actual_series = test_y_orig if "test_y_orig" in locals() and isinstance(test_y_orig, pd.Series) else None
+        return _build_failed_result(key, default_label, family, spec, train_idx, test_idx, str(exc), test_actual=actual_series)
 
 
 def grid_search_arima(
@@ -864,7 +896,7 @@ def grid_search_arima(
     return res_df, best_info
 
 
-def fit_full_and_forecast(
+def fit_full_and_forecast_detailed(
     y: pd.Series,
     spec: Dict[str, Any],
     steps: int,
@@ -872,46 +904,28 @@ def fit_full_and_forecast(
     exog: Optional[pd.DataFrame] = None,
     future_exog: Optional[pd.DataFrame] = None,
     m: Optional[int] = None,
-) -> pd.DataFrame:
+) -> ForecastResult:
     """
-    Refit model specification on the full available dataset and project forward into the future.
-
-    Parameters
-    ----------
-    y : pd.Series
-        Model base series.
-    spec : Dict[str, Any]
-        Model specification.
-    steps : int
-        Number of steps ahead to forecast.
-    transform_info : Optional[Dict[str, Any]]
-        Variance transformation metadata.
-    exog : Optional[pd.DataFrame]
-        In-sample exogenous regressors.
-    future_exog : Optional[pd.DataFrame]
-        Future exogenous regressors covering the forecast horizon.
-    m : Optional[int]
-        Seasonal period.
-
-    Returns
-    -------
-    pd.DataFrame
-        Forecast DataFrame with columns ['mean', 'lower', 'upper'] in original data scale,
-        indexed by a DatetimeIndex continuing the series sampling frequency.
+    Refit model specification on the full available dataset and return detailed ForecastResult.
+    Raises ValueError for invalid inputs (steps <= 0; SARIMAX without or with wrong-length future_exog).
+    Numerical failures return converged=False with diagnostic message rather than raising.
     """
+    start_time = time.perf_counter()
     clean_y = y.dropna()
     family = spec.get("family", "arima").lower()
+    label = spec.get("label", family.upper())
+    transform_steps = list(transform_info.get("steps", [])) if transform_info else []
+    n_train = len(clean_y)
+    last_date = clean_y.index[-1] if n_train > 0 else pd.Timestamp.now()
 
     if steps <= 0:
-        raise ValueError("Forecast steps must be a positive integer.")
+        raise ValueError(f"Forecast horizon (steps) must be positive, got {steps}.")
 
     # Determine continuation future DatetimeIndex
-    last_date = clean_y.index[-1]
     freq = clean_y.index.freqstr or pd.infer_freq(clean_y.index)
     if freq:
         future_index = pd.date_range(start=last_date, periods=steps + 1, freq=freq)[1:]
     else:
-        # Fallback heuristic using average diff
         diff_td = (clean_y.index[-1] - clean_y.index[0]) / max(1, len(clean_y) - 1)
         future_index = pd.DatetimeIndex([last_date + (i + 1) * diff_td for i in range(steps)])
 
@@ -923,106 +937,194 @@ def fit_full_and_forecast(
                 f"Length of future_exog ({len(future_exog)}) does not match required forecast steps ({steps})."
             )
 
-    # 1. Fit on Full Data
-    if family == "naive":
-        last_val = clean_y.iloc[-1]
-        fc_mean = pd.Series(last_val, index=future_index)
-        sd_res = float((clean_y - clean_y.shift(1).bfill()).std(ddof=1))
-        h = np.arange(1, steps + 1)
-        margin = 1.96 * sd_res * np.sqrt(h)
-        fc_lower = fc_mean - margin
-        fc_upper = fc_mean + margin
+    try:
+        # 1. Fit on Full Data
+        warnings_list: List[str] = []
+        notes = ""
+        converged = True
 
-    elif family == "seasonal_naive":
-        season_m = spec.get("m", m or 12)
-        fc_mean_vals = [clean_y.iloc[-season_m + (step % season_m)] for step in range(steps)]
-        fc_mean = pd.Series(fc_mean_vals, index=future_index)
-        sd_res = float((clean_y - clean_y.shift(season_m).bfill()).std(ddof=1))
-        k_cycles = np.ceil(np.arange(1, steps + 1) / season_m)
-        margin = 1.96 * sd_res * np.sqrt(k_cycles)
-        fc_lower = fc_mean - margin
-        fc_upper = fc_mean + margin
+        if family == "naive":
+            last_val = clean_y.iloc[-1]
+            fc_mean = pd.Series(last_val, index=future_index)
+            sd_res = float((clean_y - clean_y.shift(1).bfill()).std(ddof=1))
+            h = np.arange(1, steps + 1)
+            margin = 1.96 * sd_res * np.sqrt(h)
+            fc_lower = fc_mean - margin
+            fc_upper = fc_mean + margin
+            notes = "Naive forecast projecting last observed level with expanding analytical uncertainty."
 
-    elif family == "drift":
-        slope = (clean_y.iloc[-1] - clean_y.iloc[0]) / max(1, len(clean_y) - 1)
-        h_out = np.arange(1, steps + 1)
-        fc_mean = pd.Series(clean_y.iloc[-1] + h_out * slope, index=future_index)
-        fitted = clean_y.iloc[0] + np.arange(len(clean_y)) * slope
-        sd_res = float((clean_y - fitted).std(ddof=1))
-        margin = 1.96 * sd_res * np.sqrt(h_out)
-        fc_lower = fc_mean - margin
-        fc_upper = fc_mean + margin
+        elif family == "seasonal_naive":
+            season_m = spec.get("m", m or 12)
+            fc_mean_vals = [clean_y.iloc[-season_m + (step % season_m)] for step in range(steps)]
+            fc_mean = pd.Series(fc_mean_vals, index=future_index)
+            sd_res = float((clean_y - clean_y.shift(season_m).bfill()).std(ddof=1))
+            k_cycles = np.ceil(np.arange(1, steps + 1) / season_m)
+            margin = 1.96 * sd_res * np.sqrt(k_cycles)
+            fc_lower = fc_mean - margin
+            fc_upper = fc_mean + margin
+            notes = f"Seasonal naive forecast projecting lag {season_m} seasonal cycle."
 
-    elif family in ["ar", "ma", "arma", "arima", "sarima", "sarimax"]:
-        p = spec.get("p", 0)
-        d = spec.get("d", 0)
-        q = spec.get("q", 0)
-        P = spec.get("P", 0)
-        D = spec.get("D", 0)
-        Q = spec.get("Q", 0)
-        m_s = spec.get("m", m or 1)
-        trend = _resolve_trend(spec, d, D)
+        elif family == "drift":
+            slope = (clean_y.iloc[-1] - clean_y.iloc[0]) / max(1, len(clean_y) - 1)
+            h_out = np.arange(1, steps + 1)
+            fc_mean = pd.Series(clean_y.iloc[-1] + h_out * slope, index=future_index)
+            fitted = clean_y.iloc[0] + np.arange(len(clean_y)) * slope
+            sd_res = float((clean_y - fitted).std(ddof=1))
+            margin = 1.96 * sd_res * np.sqrt(h_out)
+            fc_lower = fc_mean - margin
+            fc_upper = fc_mean + margin
+            notes = "Drift forecast with expanding standard errors."
 
-        if P > 0 or D > 0 or Q > 0:
-            season_m = m_s if (m_s and m_s > 1) else 12
-            seas_order = (P, D, Q, season_m)
-        else:
-            seas_order = (0, 0, 0, 0)
+        elif family in ["ar", "ma", "arma", "arima", "sarima", "sarimax"]:
+            p = spec.get("p", 0)
+            d = spec.get("d", 0)
+            q = spec.get("q", 0)
+            P = spec.get("P", 0)
+            D = spec.get("D", 0)
+            Q = spec.get("Q", 0)
+            m_s = spec.get("m", m or 1)
+            trend = _resolve_trend(spec, d, D)
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore")
-            model_obj = _build_sarimax(
-                clean_y,
-                order=(p, d, q),
-                seasonal_order=seas_order,
-                trend=trend,
-                exog=exog if family == "sarimax" else None,
-            )
-            res = model_obj.fit(disp=False)
-            if family == "sarimax":
-                fc_res = res.get_forecast(steps=steps, exog=future_exog)
+            if P > 0 or D > 0 or Q > 0:
+                season_m = m_s if (m_s and m_s > 1) else 12
+                seas_order = (P, D, Q, season_m)
             else:
-                fc_res = res.get_forecast(steps=steps)
+                seas_order = (0, 0, 0, 0)
 
-        fc_mean = fc_res.predicted_mean
-        ci = fc_res.conf_int(alpha=0.05)
-        fc_lower = pd.Series(ci.iloc[:, 0].values, index=future_index)
-        fc_upper = pd.Series(ci.iloc[:, 1].values, index=future_index)
+            with warnings.catch_warnings(record=True) as recorded_w:
+                warnings.filterwarnings("ignore")
+                model_obj = _build_sarimax(
+                    clean_y,
+                    order=(p, d, q),
+                    seasonal_order=seas_order,
+                    trend=trend,
+                    exog=exog if family == "sarimax" else None,
+                )
+                res = model_obj.fit(disp=False)
+                for w in recorded_w:
+                    if issubclass(w.category, ConvergenceWarning):
+                        converged = False
+                        warnings_list.append("Optimizer reported that MLE estimation did not converge.")
 
-    elif family == "holt_winters":
-        trend_type = spec.get("trend")
-        damped_flag = spec.get("damped", False)
-        seasonal_type = spec.get("seasonal")
-        season_m = spec.get("m", m or 12) if seasonal_type else None
+                if family == "sarimax":
+                    fc_res = res.get_forecast(steps=steps, exog=future_exog)
+                else:
+                    fc_res = res.get_forecast(steps=steps)
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore")
-            hw_model = ExponentialSmoothing(clean_y, trend=trend_type, damped_trend=damped_flag, seasonal=seasonal_type, seasonal_periods=season_m)
-            res = hw_model.fit()
+            fc_mean = fc_res.predicted_mean
+            ci = fc_res.conf_int(alpha=0.05)
+            fc_lower = pd.Series(ci.iloc[:, 0].values, index=future_index)
+            fc_upper = pd.Series(ci.iloc[:, 1].values, index=future_index)
+            notes = f"Estimated via statsmodels SARIMAX (order={(p, d, q)}, seasonal_order={seas_order}, trend='{trend}')."
 
-        fc_mean = res.forecast(steps=steps)
-        try:
-            sims = res.simulate(nsimulations=steps, repetitions=500, rng=np.random.default_rng(42))
-            fc_lower = pd.Series(np.percentile(sims, 2.5, axis=1), index=future_index)
-            fc_upper = pd.Series(np.percentile(sims, 97.5, axis=1), index=future_index)
-        except Exception:
-            sd_res = float(res.resid.std(ddof=1)) if len(res.resid) > 1 else 1.0
-            fc_lower = fc_mean - 1.96 * sd_res
-            fc_upper = fc_mean + 1.96 * sd_res
+        elif family == "holt_winters":
+            trend_type = spec.get("trend")
+            damped_flag = spec.get("damped", False)
+            seasonal_type = spec.get("seasonal")
+            season_m = spec.get("m", m or 12) if seasonal_type else None
 
-    else:
-        raise ValueError(f"Unsupported model family: '{family}'.")
+            if (trend_type == "mul" or seasonal_type == "mul") and (clean_y <= 0).any():
+                return ForecastResult(
+                    df=pd.DataFrame({"mean": np.nan, "lower": np.nan, "upper": np.nan}, index=future_index),
+                    label=label,
+                    spec=spec,
+                    converged=False,
+                    warnings=["Multiplicative Holt-Winters requires strictly positive values."],
+                    notes="Failed: non-positive values encountered.",
+                    fit_seconds=float(time.perf_counter() - start_time),
+                    n_train=n_train,
+                    last_train_date=last_date,
+                    transform_steps=transform_steps,
+                )
 
-    # Invert transforms
-    mean_orig = inverse_variance_transform(fc_mean, transform_info)
-    lower_orig = inverse_variance_transform(fc_lower, transform_info)
-    upper_orig = inverse_variance_transform(fc_upper, transform_info)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore")
+                hw_model = ExponentialSmoothing(
+                    clean_y,
+                    trend=trend_type,
+                    damped_trend=damped_flag,
+                    seasonal=seasonal_type,
+                    seasonal_periods=season_m,
+                    initialization_method="estimated",
+                )
+                res = hw_model.fit()
 
-    return pd.DataFrame(
-        {
-            "mean": mean_orig.values if hasattr(mean_orig, "values") else mean_orig,
-            "lower": lower_orig.values if hasattr(lower_orig, "values") else lower_orig,
-            "upper": upper_orig.values if hasattr(upper_orig, "values") else upper_orig,
-        },
-        index=future_index,
-    )
+            fc_mean = res.forecast(steps=steps)
+            try:
+                sims = res.simulate(nsimulations=steps, repetitions=500, rng=np.random.default_rng(42))
+                fc_lower = pd.Series(np.percentile(sims, 2.5, axis=1), index=future_index)
+                fc_upper = pd.Series(np.percentile(sims, 97.5, axis=1), index=future_index)
+                notes = "Prediction intervals derived via Monte Carlo residual simulation (repetitions=500, seed=42)."
+            except Exception:
+                sd_res = float(res.resid.std(ddof=1)) if len(res.resid) > 1 else 1.0
+                fc_lower = fc_mean - 1.96 * sd_res
+                fc_upper = fc_mean + 1.96 * sd_res
+                notes = "Prediction intervals derived via analytical standard error fallback (+/- 1.96 * residual std)."
+
+        else:
+            raise ValueError(f"Unsupported model family: '{family}'.")
+
+        # Invert transforms
+        mean_orig = inverse_variance_transform(fc_mean, transform_info)
+        lower_orig = inverse_variance_transform(fc_lower, transform_info)
+        upper_orig = inverse_variance_transform(fc_upper, transform_info)
+
+        df = pd.DataFrame(
+            {
+                "mean": mean_orig.values if hasattr(mean_orig, "values") else mean_orig,
+                "lower": lower_orig.values if hasattr(lower_orig, "values") else lower_orig,
+                "upper": upper_orig.values if hasattr(upper_orig, "values") else upper_orig,
+            },
+            index=future_index,
+        )
+
+        return ForecastResult(
+            df=df,
+            label=label,
+            spec=spec,
+            converged=converged,
+            warnings=warnings_list,
+            notes=notes,
+            fit_seconds=float(time.perf_counter() - start_time),
+            n_train=n_train,
+            last_train_date=last_date,
+            transform_steps=transform_steps,
+        )
+
+    except Exception as exc:
+        return ForecastResult(
+            df=pd.DataFrame({"mean": np.nan, "lower": np.nan, "upper": np.nan}, index=future_index),
+            label=label,
+            spec=spec,
+            converged=False,
+            warnings=[str(exc)],
+            notes=f"Estimation failed numerically: {str(exc)}",
+            fit_seconds=float(time.perf_counter() - start_time),
+            n_train=n_train,
+            last_train_date=last_date,
+            transform_steps=transform_steps,
+        )
+
+
+def fit_full_and_forecast(
+    y: pd.Series,
+    spec: Dict[str, Any],
+    steps: int,
+    transform_info: Optional[Dict[str, Any]] = None,
+    exog: Optional[pd.DataFrame] = None,
+    future_exog: Optional[pd.DataFrame] = None,
+    m: Optional[int] = None,
+) -> pd.DataFrame:
+    """
+    Thin wrapper around fit_full_and_forecast_detailed returning the forecast DataFrame.
+    """
+    return fit_full_and_forecast_detailed(
+        y=y,
+        spec=spec,
+        steps=steps,
+        transform_info=transform_info,
+        exog=exog,
+        future_exog=future_exog,
+        m=m,
+    ).df
+

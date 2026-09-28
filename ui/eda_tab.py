@@ -37,6 +37,7 @@ from modules.plots import (
     plot_stem_correlation,
     plot_time_series,
 )
+from ui.model_common import reset_model_widgets
 
 
 # UI Layer Cached Wrappers for Pure Functions
@@ -480,6 +481,7 @@ def render_eda_tab() -> None:
                     st.session_state["model_series"] = transformed_s
                     st.session_state["model_base_series"] = base_s
                     st.session_state["transform_info"] = tf_info_copy
+                    reset_model_widgets()
                     st.toast("Transformed series set as active modeling series!", icon="🚀")
                     st.rerun()
 
@@ -494,6 +496,7 @@ def render_eda_tab() -> None:
                         "suggested_D": 0,
                         "seasonal_period": None,
                     }
+                    reset_model_widgets()
                     st.toast("Reset active modeling series to original data.", icon="↺")
                     st.rerun()
 
