@@ -9,7 +9,7 @@ venv/
 ENV/
 
 # Streamlit
-.streamlit/
+.streamlit/secrets.toml
 
 # OS generated
 .DS_Store

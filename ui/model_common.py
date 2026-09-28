@@ -18,6 +18,7 @@ from modules.diagnostics import (
     compute_acf_pacf,
     decompose,
     kpss_test,
+    stationarity_verdict,
     suggest_orders,
     transform_series,
 )
@@ -54,7 +55,7 @@ def reset_model_widgets() -> None:
         st.session_state.pop(k, None)
 
 
-@st.cache_data
+@st.cache_data(max_entries=50, ttl=3600)
 def cached_fit_model(
     y: pd.Series,
     spec: Dict[str, Any],
@@ -76,7 +77,7 @@ def cached_fit_model(
     )
 
 
-@st.cache_data
+@st.cache_data(max_entries=50, ttl=3600)
 def cached_grid_search(
     y: pd.Series,
     p_range: List[int],
@@ -157,10 +158,16 @@ def fit_all_default_models(
     suggested_D = transform_info.get("suggested_D", 0) if transform_info else 0
 
     if suggested_d == 0 and suggested_D == 0:
+        verdict = "Non-stationary"
         try:
-            adf_test(model_base_series)
-            kpss_test(model_base_series)
-            suggested_d = 1
+            adf_res = adf_test(model_base_series)
+            kpss_res = kpss_test(model_base_series)
+            verdict_res = stationarity_verdict(adf_res, kpss_res)
+            verdict = verdict_res.get("verdict", "")
+            if verdict != "Stationary":
+                suggested_d = 1
+            else:
+                suggested_d = 0
         except Exception:
             suggested_d = 1
 
@@ -172,7 +179,7 @@ def fit_all_default_models(
             except Exception:
                 pass
 
-        st.info(f"Auto-suggested differencing for default models: d={suggested_d}, D={suggested_D}.")
+        st.info(f"Auto-suggested differencing for default models (stationarity verdict '{verdict}'): d={suggested_d}, D={suggested_D}.")
 
     fitted_results: List[ModelResult] = []
     total = len(all_families)

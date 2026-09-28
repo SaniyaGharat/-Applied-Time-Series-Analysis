@@ -87,13 +87,20 @@ def load_uploaded_file(uploaded_file) -> pd.DataFrame:
 
     try:
         if file_name.endswith(".csv"):
-            return pd.read_csv(uploaded_file)
+            df = pd.read_csv(uploaded_file)
         elif file_name.endswith((".xlsx", ".xls")):
-            return pd.read_excel(uploaded_file)
+            df = pd.read_excel(uploaded_file)
         else:
             raise ValueError(f"Unsupported file format for '{uploaded_file.name}'. Please upload a CSV or Excel file.")
+    except pd.errors.EmptyDataError:
+        raise ValueError(f"The uploaded file '{uploaded_file.name}' is empty.")
     except Exception as exc:
         raise ValueError(f"Error reading file '{uploaded_file.name}': {str(exc)}") from exc
+
+    if df.empty or len(df.columns) == 0:
+        raise ValueError(f"The uploaded file '{uploaded_file.name}' is empty (contains no data or columns).")
+
+    return df
 
 
 def detect_date_columns(df: pd.DataFrame) -> List[str]:
@@ -275,9 +282,13 @@ def prepare_time_series(
     if target_col is not None:
         if target_col not in cleaned_df.columns:
             raise ValueError(f"Target column '{target_col}' not found in DataFrame.")
-        series = cleaned_df[target_col].copy()
-        series.name = target_col
-        return series
+        numeric_series = pd.to_numeric(cleaned_df[target_col], errors="coerce")
+        if numeric_series.dropna().empty:
+            raise ValueError(
+                f"Target column '{target_col}' contains no valid numeric values (all values are non-numeric or NaN)."
+            )
+        numeric_series.name = target_col
+        return numeric_series
 
     return cleaned_df
 

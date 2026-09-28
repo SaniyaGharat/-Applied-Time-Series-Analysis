@@ -359,6 +359,171 @@ def test_target_column_change_clears_forecast_results_apptest():
     print("[PASS] Target column change successfully invalidated signature and cleared forecast_results.")
 
 
+def test_forecast_tab_real_apptest():
+    """Renders Forecast tab with real app.py and asserts:
+    - leaderboard dataframe
+    - Top Performer banner
+    - DM table
+    - after clicking 'Generate forecast', a forecast_results entry."""
+    print("\n--- Testing Phase 5: Forecast Tab AppTest with Real app.py ---")
+    at = _init_demo_apptest()
+    at.run()
+    assert not at.exception
+
+    s = at.session_state["model_base_series"]
+    from modules.models import fit_model
+    m_naive = fit_model(s, {"family": "naive"}, test_size=12)
+    m_ar = fit_model(s, {"family": "ar", "p": 1, "d": 0, "trend": "c"}, test_size=12)
+
+    at.session_state["model_results"][m_naive.key] = m_naive
+    at.session_state["model_results"][m_ar.key] = m_ar
+
+    at.run()
+    assert not at.exception
+    assert len(at.error) == 0
+
+    # 1. Assert leaderboard dataframe
+    comp_df_present = any(
+        hasattr(df.value, "columns") and "RelRMSE_vs_ref" in df.value.columns
+        for df in at.dataframe
+    )
+    assert comp_df_present, "Comparison leaderboard dataframe not found in at.dataframe"
+
+    # 2. Assert Top Performer banner
+    all_banners = list(at.success) + list(at.warning) + list(at.info)
+    top_performer_banner = any("Top Performer" in s.value for s in all_banners)
+    assert top_performer_banner, f"Top Performer banner not found in UI banners: {[s.value for s in all_banners]}"
+
+    # 3. Assert DM table
+    dm_df_present = any(
+        hasattr(df.value, "columns") and "DM stat" in df.value.columns
+        for df in at.dataframe
+    )
+    assert dm_df_present, "Pairwise DM table not found in at.dataframe"
+
+    # 4. Click 'Generate forecast' button and verify forecast_results entry
+    gen_btn = at.button(key="btn_generate_forecast")
+    assert gen_btn is not None, "btn_generate_forecast button not found in Forecast tab"
+    gen_btn.click().run()
+    assert not at.exception
+    assert len(at.session_state["forecast_results"]) > 0, "No forecast_results entry after clicking button"
+    print(f"[PASS] Real app.py Forecast tab AppTest verified: {len(at.session_state['forecast_results'])} forecast result(s).")
+
+
+def test_upload_empty_csv_apptest():
+    """Verify empty CSV displays friendly st.error and never raises a traceback."""
+    at = AppTest.from_file("app.py", default_timeout=30)
+    at.session_state["raw_df"] = pd.DataFrame()
+    at.session_state["source_name"] = "empty.csv"
+    at.run()
+
+    assert not at.exception, "App crashed with exception on empty CSV"
+    assert len(at.error) > 0, "Expected st.error on empty CSV"
+    assert any("empty" in err.value.lower() for err in at.error)
+
+
+def test_upload_date_only_csv_apptest():
+    """Verify CSV with only a date column displays friendly st.error and never raises a traceback."""
+    at = AppTest.from_file("app.py", default_timeout=30)
+    at.session_state["raw_df"] = pd.DataFrame({"Date": ["2020-01-01", "2020-02-01", "2020-03-01"]})
+    at.session_state["source_name"] = "date_only.csv"
+    at.run()
+
+    assert not at.exception, "App crashed with exception on date-only CSV"
+    assert len(at.error) > 0, "Expected st.error on date-only CSV"
+    assert any(
+        "single column" in err.value.lower() or "no valid target" in err.value.lower()
+        for err in at.error
+    )
+
+
+def test_upload_single_row_apptest():
+    """Verify single-row CSV displays friendly st.error and never raises a traceback."""
+    at = AppTest.from_file("app.py", default_timeout=30)
+    at.session_state["raw_df"] = pd.DataFrame({"Date": ["2020-01-01"], "Value": [42.0]})
+    at.session_state["source_name"] = "single_row.csv"
+    at.run()
+
+    assert not at.exception, "App crashed with exception on single-row CSV"
+    assert len(at.error) > 0, "Expected st.error on single-row CSV"
+    assert any("1 row" in err.value.lower() or "at least 2" in err.value.lower() for err in at.error)
+
+
+def test_upload_non_numeric_target_apptest():
+    """Verify non-numeric target displays friendly st.error and never raises a traceback."""
+    at = AppTest.from_file("app.py", default_timeout=30)
+    at.session_state["raw_df"] = pd.DataFrame(
+        {
+            "Date": ["2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01"],
+            "Category": ["cat", "dog", "bird", "fish"],
+        }
+    )
+    at.session_state["source_name"] = "non_numeric.csv"
+    at.session_state["selected_date_col"] = "Date"
+    at.session_state["selected_target_col"] = "Category"
+    at.run()
+
+    assert not at.exception, "App crashed with exception on non-numeric target"
+    assert len(at.error) > 0, "Expected st.error on non-numeric target"
+    assert any("non-numeric" in err.value.lower() for err in at.error)
+
+
+def test_upload_all_nan_target_apptest():
+    """Verify all-NaN target displays friendly st.error and never raises a traceback."""
+    at = AppTest.from_file("app.py", default_timeout=30)
+    at.session_state["raw_df"] = pd.DataFrame(
+        {
+            "Date": ["2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01"],
+            "Target": [np.nan, np.nan, np.nan, np.nan],
+        }
+    )
+    at.session_state["source_name"] = "all_nan.csv"
+    at.session_state["selected_date_col"] = "Date"
+    at.session_state["selected_target_col"] = "Target"
+    at.run()
+
+    assert not at.exception, "App crashed with exception on all-NaN target"
+    assert len(at.error) > 0, "Expected st.error on all-NaN target"
+    assert any("nan" in err.value.lower() or "missing" in err.value.lower() for err in at.error)
+
+
+def test_bundled_sample_dataset_loading_apptest():
+    """Verify selecting bundled sample dataset loads AirPassengers cleanly with auto-configured columns."""
+    at = AppTest.from_file("app.py", default_timeout=30).run()
+    assert not at.exception
+
+    # Select AirPassengers from sample datasets selectbox
+    sample_sb = at.selectbox(key="sample_dataset_select")
+    assert sample_sb is not None, "sample_dataset_select widget not found in Data tab"
+    sample_sb.select("AirPassengers (Monthly 1949-1960)").run()
+
+    assert not at.exception
+    assert len(at.error) == 0, f"Unexpected errors on sample dataset load: {[e.value for e in at.error]}"
+    assert at.session_state["selected_date_col"] == "Month"
+    assert at.session_state["selected_target_col"] == "Passengers"
+    assert len(at.session_state["raw_df"]) == 144
+    assert len(at.session_state["ts_series"]) == 144
+
+
+def test_upload_5mb_file_apptest():
+    """Verify large 5 MB dataset loads cleanly without memory explosion or tracebacks."""
+    n_rows = 100_000
+    dates = pd.date_range("2000-01-01", periods=n_rows, freq="h").strftime("%Y-%m-%d %H:%M:%S")
+    vals = np.round(np.linspace(10.0, 500.0, n_rows), 2)
+    large_df = pd.DataFrame({"Timestamp": dates, "Sensor_Reading": vals})
+
+    at = AppTest.from_file("app.py", default_timeout=30)
+    at.session_state["raw_df"] = large_df
+    at.session_state["source_name"] = "large_5mb_sensor.csv"
+    at.session_state["selected_date_col"] = "Timestamp"
+    at.session_state["selected_target_col"] = "Sensor_Reading"
+    at.run()
+
+    assert not at.exception, "App crashed with exception on 5 MB dataset"
+    assert len(at.error) == 0, f"Unexpected error on 5 MB dataset: {[e.value for e in at.error]}"
+    assert len(at.session_state["raw_df"]) == n_rows
+
+
 if __name__ == "__main__":
     print("==================================================")
     print("Starting ATSA Smoke & AppTest Suites...")
@@ -369,6 +534,16 @@ if __name__ == "__main__":
     test_a2_stale_widget_state_apptest()
     test_forecast_tab_and_future_forecasting()
     test_target_column_change_clears_forecast_results_apptest()
+    test_forecast_tab_real_apptest()
+    test_upload_empty_csv_apptest()
+    test_upload_date_only_csv_apptest()
+    test_upload_single_row_apptest()
+    test_upload_non_numeric_target_apptest()
+    test_upload_all_nan_target_apptest()
+    test_bundled_sample_dataset_loading_apptest()
+    test_upload_5mb_file_apptest()
     print("\n==================================================")
     print("ALL TESTS IN TEST_APP_SMOKE COMPLETED SUCCESSFULLY!")
     print("==================================================")
+
+

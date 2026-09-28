@@ -10,6 +10,7 @@ Handles:
 - Session state caching and genuine widget clearing.
 """
 
+from pathlib import Path
 from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
@@ -25,6 +26,25 @@ from modules.data_loader import (
 )
 from modules.plots import plot_time_series
 from ui.model_common import reset_model_widgets
+
+# Resolve repo root and data directory relative to this file
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = REPO_ROOT / "data"
+
+SAMPLE_DATASETS = {
+    "AirPassengers (Monthly 1949-1960)": {
+        "file": "AirPassengers.csv",
+        "date_col": "Month",
+        "target_col": "Passengers",
+        "display_name": "AirPassengers (Monthly 1949-1960)",
+    },
+    "India Dataset (Placeholder)": {
+        "file": "india_dataset_placeholder.csv",
+        "date_col": "Date",
+        "target_col": "Value",
+        "display_name": "India Dataset (Placeholder)",
+    },
+}
 
 
 def create_demo_data() -> pd.DataFrame:
@@ -59,6 +79,8 @@ def clear_data_action() -> None:
         "raw_df",
         "source_name",
         "uploaded_file_id",
+        "current_sample_dataset",
+        "sample_dataset_select",
         "selected_date_col",
         "selected_target_col",
         "selected_exog_cols",
@@ -90,15 +112,15 @@ def render_data_tab() -> None:
     """Render the full Phase 1 Data Ingestion & Preprocessing tab with exog support."""
     st.markdown("### 📥 Dataset Ingestion & Configuration")
     st.markdown(
-        "Upload a time series dataset (**CSV**, **XLSX**, or **XLS**) or load reproducible demo data to begin "
-        "ingestion, datetime parsing, frequency regularization, and exploratory visualization."
+        "Upload a time series dataset (**CSV**, **XLSX**, or **XLS**), choose a bundled sample dataset, or load "
+        "reproducible demo data to begin ingestion, datetime parsing, frequency regularization, and exploratory visualization."
     )
 
     if "uploader_key" not in st.session_state:
         st.session_state["uploader_key"] = 0
 
     # Ingestion Controls
-    upload_col, demo_col, clear_col = st.columns([2.5, 1, 1])
+    upload_col, sample_col, demo_col, clear_col = st.columns([2.0, 1.4, 0.9, 0.9])
 
     with upload_col:
         uploader_widget_key = f"file_uploader_{st.session_state['uploader_key']}"
@@ -109,16 +131,52 @@ def render_data_tab() -> None:
             key=uploader_widget_key,
         )
 
+    with sample_col:
+        st.write("")
+        sample_options = ["(Select a sample dataset)"] + list(SAMPLE_DATASETS.keys())
+        current_sample = st.session_state.get("current_sample_dataset", "(Select a sample dataset)")
+        s_idx = sample_options.index(current_sample) if current_sample in sample_options else 0
+        chosen_sample = st.selectbox(
+            "Sample datasets:",
+            options=sample_options,
+            index=s_idx,
+            key="sample_dataset_select",
+            help="Load bundled sample datasets from the repository.",
+        )
+        if chosen_sample != "(Select a sample dataset)" and chosen_sample != st.session_state.get("current_sample_dataset"):
+            meta = SAMPLE_DATASETS[chosen_sample]
+            sample_path = DATA_DIR / meta["file"]
+            if sample_path.exists():
+                sample_df = pd.read_csv(sample_path)
+                st.session_state["raw_df"] = sample_df
+                st.session_state["source_name"] = meta["display_name"]
+                st.session_state["selected_date_col"] = meta["date_col"]
+                st.session_state["selected_target_col"] = meta["target_col"]
+                st.session_state["date_col_select"] = meta["date_col"]
+                st.session_state["target_col_select"] = meta["target_col"]
+                st.session_state["selected_exog_cols"] = []
+                st.session_state["exog_col_select"] = []
+                st.session_state["current_sample_dataset"] = chosen_sample
+                st.session_state.pop("uploaded_file_id", None)
+                st.rerun()
+            else:
+                st.error(f"Sample dataset file '{sample_path}' not found.")
+
     with demo_col:
         st.write("")
         st.write("")
         if st.button("🧪 Load Demo Data", help="Load reproducible monthly demo data (seed=42).", width="stretch"):
             st.session_state["raw_df"] = create_demo_data()
             st.session_state["source_name"] = "Demo Data (Synthetic Monthly, Seed=42)"
+            st.session_state["selected_date_col"] = "Date"
+            st.session_state["selected_target_col"] = "Sales"
+            st.session_state["date_col_select"] = "Date"
+            st.session_state["target_col_select"] = "Sales"
+            st.session_state["selected_exog_cols"] = []
+            st.session_state["exog_col_select"] = []
+            st.session_state.pop("current_sample_dataset", None)
+            st.session_state.pop("sample_dataset_select", None)
             st.session_state.pop("uploaded_file_id", None)
-            st.session_state.pop("date_col_select", None)
-            st.session_state.pop("target_col_select", None)
-            st.session_state.pop("exog_col_select", None)
             st.rerun()
 
     with clear_col:
@@ -140,6 +198,11 @@ def render_data_tab() -> None:
                 st.session_state.pop("date_col_select", None)
                 st.session_state.pop("target_col_select", None)
                 st.session_state.pop("exog_col_select", None)
+                st.session_state.pop("selected_date_col", None)
+                st.session_state.pop("selected_target_col", None)
+                st.session_state.pop("selected_exog_cols", None)
+                st.session_state.pop("current_sample_dataset", None)
+                st.session_state.pop("sample_dataset_select", None)
                 st.rerun()
             except Exception as err:
                 st.error(f"Failed to load uploaded file: {err}")
@@ -149,7 +212,24 @@ def render_data_tab() -> None:
     source_name = st.session_state.get("source_name")
 
     if raw_df is None:
-        st.info("👆 Please upload a CSV/XLSX file or click **Load Demo Data** to begin.")
+        st.info("👆 Please upload a CSV/XLSX file, select a sample dataset, or click **Load Demo Data** to begin.")
+        return
+
+    # Upload validation: empty dataset
+    if raw_df.empty or len(raw_df.columns) == 0:
+        st.error("Uploaded dataset is empty (contains no data rows or columns).")
+        return
+
+    # Upload validation: single row or insufficient data
+    if len(raw_df) < 2:
+        st.error(f"Dataset has only {len(raw_df)} row(s). Time series analysis requires at least 2 observations.")
+        return
+
+    # Upload validation: only date column (single column)
+    if len(raw_df.columns) < 2:
+        st.error(
+            "Dataset contains only a single column. Time series analysis requires at least a date column and a target numeric column."
+        )
         return
 
     st.success(f"Active Dataset: **{source_name}** ({len(raw_df)} rows, {len(raw_df.columns)} columns)")
@@ -166,10 +246,10 @@ def render_data_tab() -> None:
 
     with cfg_col1:
         default_date_idx = 0
-        if candidate_dates and candidate_dates[0] in all_columns:
-            default_date_idx = all_columns.index(candidate_dates[0])
-        elif st.session_state.get("selected_date_col") in all_columns:
+        if st.session_state.get("selected_date_col") in all_columns:
             default_date_idx = all_columns.index(st.session_state["selected_date_col"])
+        elif candidate_dates and candidate_dates[0] in all_columns:
+            default_date_idx = all_columns.index(candidate_dates[0])
 
         selected_date_col = st.selectbox(
             "Select Date / Timestamp Column:",
@@ -189,9 +269,15 @@ def render_data_tab() -> None:
         if not target_candidates:
             target_candidates = [c for c in all_columns if c != selected_date_col]
 
+        if not target_candidates:
+            st.error("No valid target column found besides the date column. Please upload a dataset with a target series.")
+            return
+
         default_target_idx = 0
         if st.session_state.get("selected_target_col") in target_candidates:
             default_target_idx = target_candidates.index(st.session_state["selected_target_col"])
+        elif candidate_numerics and candidate_numerics[0] in target_candidates:
+            default_target_idx = target_candidates.index(candidate_numerics[0])
 
         selected_target_col = st.selectbox(
             "Select Target Numeric Column:",
@@ -231,6 +317,26 @@ def render_data_tab() -> None:
         st.warning("Please ensure both a date column and a target numeric column are selected.")
         return
 
+    # Robustness checks on target column content
+    raw_target_series = raw_df[selected_target_col]
+    if raw_target_series.isna().all():
+        st.error(f"The selected target column '{selected_target_col}' contains only missing (NaN) values.")
+        return
+
+    numeric_target_check = pd.to_numeric(raw_target_series, errors="coerce")
+    if numeric_target_check.dropna().empty:
+        st.error(
+            f"The selected target column '{selected_target_col}' contains non-numeric data. "
+            "Please select a numeric target column."
+        )
+        return
+
+    if len(numeric_target_check.dropna()) < 2:
+        st.error(
+            f"The selected target column '{selected_target_col}' contains fewer than 2 valid numeric observations."
+        )
+        return
+
     # Parse and prepare initial target series
     try:
         raw_series = prepare_time_series(
@@ -243,6 +349,12 @@ def render_data_tab() -> None:
         )
     except Exception as exc:
         st.error(f"Error parsing date column or target series: {exc}")
+        return
+
+    if raw_series.dropna().empty or len(raw_series.dropna()) < 2:
+        st.error(
+            f"Target series '{selected_target_col}' contains fewer than 2 valid observations after date parsing."
+        )
         return
 
     # 2. Preprocessing & Regularization Section

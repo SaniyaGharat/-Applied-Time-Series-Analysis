@@ -42,7 +42,7 @@ from modules.plots import (
 from ui.model_common import fit_all_default_models
 
 
-@st.cache_data
+@st.cache_data(max_entries=50, ttl=3600)
 def cached_future_forecast(
     y: pd.Series,
     spec: Dict[str, Any],
@@ -88,7 +88,9 @@ def render_forecast_tab() -> None:
 
     inferred_m = transform_info.get("seasonal_period") or infer_period_from_frequency(ts_series) or 12
     active_m = int(st.session_state.get("model_m_input", inferred_m))
-    holdout_size = int(st.session_state.get("model_holdout_size_input", default_test_size(n, active_m)))
+    max_test = max(1, int(0.3 * n))
+    raw_holdout = int(st.session_state.get("model_holdout_size_input", default_test_size(n, active_m)))
+    holdout_size = min(max_test, max(1, raw_holdout))
     mase_choice = st.session_state.get("mase_scale_select", "m (seasonal naive)" if active_m >= 2 else "1 (non-seasonal naive)")
     mase_m = int(active_m) if "m" in mase_choice and active_m >= 2 else 1
 
@@ -115,8 +117,8 @@ def render_forecast_tab() -> None:
             st.rerun()
         return
 
-    # Filter eligible models: must match current holdout size
-    current_holdout_idx = model_base_series.iloc[-holdout_size:].index
+    # Filter eligible models: test_index must equal ts_series.index[-holdout_size:]
+    current_holdout_idx = ts_series.iloc[-holdout_size:].index
     eligible_models: List[ModelResult] = []
     for r in model_results.values():
         t_idx = getattr(r, "test_index", None)
@@ -195,24 +197,25 @@ def render_forecast_tab() -> None:
     best_val = best_row[rank_metric]
     rel_rmse = best_row["RelRMSE_vs_ref"]
 
+    fmt_best_val = f"{best_val:.2f}%" if rank_metric in ["MAPE", "sMAPE"] else f"{best_val:.3f}"
     has_naive = any(getattr(r, "family", "") == "naive" and r.converged for r in eligible_models)
     if has_naive and not np.isnan(rel_rmse):
         if rel_rmse < 1.0:
             pct_improvement = (1.0 - rel_rmse) * 100.0
             st.success(
-                f"🏆 **Top Performer**: **{best_label}** achieves the lowest {rank_metric} (**{best_val:.3f}**). "
+                f"🏆 **Top Performer**: **{best_label}** achieves the lowest {rank_metric} (**{fmt_best_val}**). "
                 f"It outperforms the Naive baseline by **{pct_improvement:.1f}%** (RelRMSE = **{rel_rmse:.3f}**).",
                 icon="✅",
             )
         else:
             st.warning(
-                f"⚠️ **Top Performer**: **{best_label}** achieves the lowest {rank_metric} (**{best_val:.3f}**), "
+                f"⚠️ **Top Performer**: **{best_label}** achieves the lowest {rank_metric} (**{fmt_best_val}**), "
                 f"but does **not** beat the Naive benchmark (RelRMSE = **{rel_rmse:.3f}**).",
                 icon="⚠️",
             )
     else:
         st.info(
-            f"🏆 **Top Performer**: **{best_label}** achieves the lowest {rank_metric} (**{best_val:.3f}**). "
+            f"🏆 **Top Performer**: **{best_label}** achieves the lowest {rank_metric} (**{fmt_best_val}**). "
             f"*(Fit a Naive baseline to evaluate relative percentage improvement).* ",
             icon="ℹ️",
         )
@@ -259,7 +262,7 @@ def render_forecast_tab() -> None:
     )
 
     with tab_overlay:
-        actual_holdout = model_base_series.iloc[-holdout_size:]
+        actual_holdout = ts_series.iloc[-holdout_size:]
         band_opts = ["None"] + [r.label for r in selected_models if getattr(r, "test_forecast", None) is not None and "lower" in r.test_forecast]
         selected_band_model = st.selectbox("Show 95% Prediction Interval for:", options=band_opts, index=0, key="cmp_band_select")
 
@@ -493,10 +496,10 @@ def render_forecast_tab() -> None:
 
         # Forecast Plot
         fig_future = plot_future_forecast(
-            history=model_base_series,
+            history=ts_series,
             forecast_df=active_fc.df,
             label=active_fc.label,
-            tail=min(len(model_base_series), 80),
+            tail=min(len(ts_series), 80),
             holdout_forecast=chosen_result.test_forecast if chosen_result else None,
         )
 

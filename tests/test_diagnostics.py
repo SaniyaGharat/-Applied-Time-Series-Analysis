@@ -237,6 +237,31 @@ def test_infer_period_from_frequency_exact_tokens():
     print("[PASS] 0.1 exact token assertions passed: MS->12, min->None, YS->None.")
 
 
+def test_auto_differencing_suggestion_verdict():
+    """Unit test: stationary series gives d=0; random walk gives d=1."""
+    print("\n--- 10. Auto Differencing Suggestion Verdict Test ---")
+    rng = np.random.default_rng(42)
+    dates = pd.date_range("2020-01-01", periods=300, freq="D")
+
+    # 1. Stationary white noise
+    s_stat = pd.Series(rng.normal(0, 1, 300), index=dates)
+    adf_stat = adf_test(s_stat)
+    kpss_stat = kpss_test(s_stat)
+    v_stat = stationarity_verdict(adf_stat, kpss_stat)["verdict"]
+    d_stat = 0 if v_stat == "Stationary" else 1
+    assert d_stat == 0, f"Expected d=0 for stationary series, got d={d_stat} (verdict: {v_stat})"
+
+    # 2. Non-stationary random walk
+    s_rw = pd.Series(np.cumsum(rng.normal(0, 1, 300)), index=dates)
+    adf_rw = adf_test(s_rw)
+    kpss_rw = kpss_test(s_rw)
+    v_rw = stationarity_verdict(adf_rw, kpss_rw)["verdict"]
+    d_rw = 0 if v_rw == "Stationary" else 1
+    assert d_rw == 1, f"Expected d=1 for random walk, got d={d_rw} (verdict: {v_rw})"
+
+    print(f"[PASS] Auto differencing suggestion: stationary d={d_stat}, random walk d={d_rw}.")
+
+
 if __name__ == "__main__":
     print("==================================================")
     print("Starting ATSA Diagnostics & Visualization Tests...")
@@ -250,6 +275,7 @@ if __name__ == "__main__":
     test_suggest_orders_ar2()
     test_decompose_yearly_series()
     test_infer_period_from_frequency_exact_tokens()
+    test_auto_differencing_suggestion_verdict()
     print("\n==================================================")
     print("ALL TESTS COMPLETED AND VERIFIED SUCCESSFULLY!")
     print("==================================================")

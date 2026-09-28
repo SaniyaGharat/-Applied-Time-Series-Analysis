@@ -41,22 +41,22 @@ from ui.model_common import reset_model_widgets
 
 
 # UI Layer Cached Wrappers for Pure Functions
-@st.cache_data
+@st.cache_data(max_entries=50, ttl=3600)
 def cached_adf_test(series: pd.Series, regression: str, autolag: str) -> Dict[str, Any]:
     return adf_test(series, regression=regression, autolag=autolag)
 
 
-@st.cache_data
+@st.cache_data(max_entries=50, ttl=3600)
 def cached_kpss_test(series: pd.Series, regression: str, nlags: str) -> Dict[str, Any]:
     return kpss_test(series, regression=regression, nlags=nlags)
 
 
-@st.cache_data
+@st.cache_data(max_entries=50, ttl=3600)
 def cached_acf_pacf(series: pd.Series, nlags: int) -> Dict[str, Any]:
     return compute_acf_pacf(series, nlags=nlags)
 
 
-@st.cache_data
+@st.cache_data(max_entries=50, ttl=3600)
 def cached_decomposition(
     series: pd.Series, model: str, period: Optional[int], method: str
 ) -> Dict[str, Any]:
