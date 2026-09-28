@@ -293,8 +293,9 @@ def equal_weight_combination(results: List[ModelResult]) -> Optional[ModelResult
 
 def pairwise_dm(
     results: List[ModelResult],
-    against_key: str,
+    reference_key: Optional[str] = None,
     power: int = 2,
+    against_key: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Compute pairwise Diebold-Mariano test comparing each model against a reference model.
@@ -303,24 +304,42 @@ def pairwise_dm(
     ----------
     results : list of ModelResult
         Candidate models to evaluate.
-    against_key : str
-        Key or label of benchmark model to compare against.
+    reference_key : Optional[str], default=None
+        Key or label of benchmark model to compare against. If None, defaults to first converged model.
     power : int, default=2
         Loss function power (2 for squared error, 1 for absolute error).
+    against_key : Optional[str], default=None
+        Deprecated alias for reference_key.
 
     Returns
     -------
     pd.DataFrame
         Columns: Model, DM stat, p-value, verdict, note
     """
-    ref_model = None
-    for r in results:
-        if getattr(r, "key", "") == against_key or getattr(r, "label", "") == against_key:
-            ref_model = r
-            break
+    if reference_key is None and against_key is not None:
+        reference_key = against_key
 
     cols = ["Model", "DM stat", "p-value", "verdict", "note"]
-    if ref_model is None or not getattr(ref_model, "converged", False):
+    if not results:
+        return pd.DataFrame(columns=cols)
+
+    ref_model = None
+    if reference_key is not None:
+        for r in results:
+            if getattr(r, "key", "") == reference_key or getattr(r, "label", "") == reference_key:
+                ref_model = r
+                break
+        if ref_model is None:
+            raise ValueError(f"reference_key '{reference_key}' not found in results.")
+    else:
+        for r in results:
+            if getattr(r, "converged", False):
+                ref_model = r
+                break
+        if ref_model is None:
+            ref_model = results[0]
+
+    if not getattr(ref_model, "converged", False):
         return pd.DataFrame(columns=cols)
 
     ref_act = getattr(ref_model, "test_actual", None)

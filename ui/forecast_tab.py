@@ -299,13 +299,16 @@ def render_forecast_tab() -> None:
         st.caption("Hypothesis test for equal predictive accuracy against a reference benchmark model.")
         c_sig1, c_sig2 = st.columns([2, 1])
         with c_sig1:
-            ref_opts = [r.label for r in selected_models if r.converged]
+            converged_models = [r for r in selected_models if r.converged]
+            label_to_key = {r.label: r.key for r in converged_models}
+            ref_opts = list(label_to_key.keys())
             ref_choice = st.selectbox("Reference Benchmark Model:", options=ref_opts, index=0, key="dm_ref_select")
+            ref_key = label_to_key.get(ref_choice)
         with c_sig2:
             dm_loss = st.selectbox("Loss Function:", options=["Squared Error (MSE)", "Absolute Error (MAE)"], index=0, key="dm_loss_select")
             dm_power = 2 if "Squared" in dm_loss else 1
 
-        dm_df = pairwise_dm(selected_models, against_key=ref_choice, power=dm_power)
+        dm_df = pairwise_dm(selected_models, reference_key=ref_key, power=dm_power)
         if not dm_df.empty:
             st.dataframe(dm_df, width="stretch")
             st.caption("ℹ️ *Note: Indicative only: single forecast origin, small holdout, low power.*")

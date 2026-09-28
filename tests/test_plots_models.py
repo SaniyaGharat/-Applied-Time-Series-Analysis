@@ -49,10 +49,10 @@ def test_plot_fit_vs_actual_smoke():
     fig = plot_fit_vs_actual(actual, fitted, forecast_df, title="Test Fit")
     assert isinstance(fig, go.Figure)
 
-
     # Windowed version
     fig_win = plot_fit_vs_actual(actual, fitted, forecast_df, show_train_window=20)
     assert isinstance(fig_win, go.Figure)
+    print("[PASS] plot_fit_vs_actual smoke tests passed.")
 
 
 def test_plot_holdout_zoom_smoke():
@@ -72,10 +72,10 @@ def test_plot_holdout_zoom_smoke():
     fig = plot_holdout_zoom(actual, forecast_df)
     assert isinstance(fig, go.Figure)
 
-
     # Empty forecast fallback
     fig_empty = plot_holdout_zoom(actual, pd.DataFrame())
     assert isinstance(fig_empty, go.Figure)
+    print("[PASS] plot_holdout_zoom smoke tests passed.")
 
 
 def test_plot_inverse_roots_smoke():
@@ -86,7 +86,6 @@ def test_plot_inverse_roots_smoke():
     fig = plot_inverse_roots(ar_roots, ma_roots, title="Root Analysis")
     assert isinstance(fig, go.Figure)
 
-
     # 2. Empty roots (e.g. ARIMA(0,1,0) or naive)
     fig_empty = plot_inverse_roots([], [])
     assert isinstance(fig_empty, go.Figure)
@@ -94,6 +93,7 @@ def test_plot_inverse_roots_smoke():
     ann_texts = [ann.text for ann in fig_empty.layout.annotations]
     assert any("No AR terms" in txt for txt in ann_texts)
     assert any("No MA terms" in txt for txt in ann_texts)
+    print("[PASS] plot_inverse_roots smoke tests passed.")
 
 
 def test_plot_theoretical_vs_empirical_smoke():
@@ -109,10 +109,10 @@ def test_plot_theoretical_vs_empirical_smoke():
     fig = plot_theoretical_vs_empirical(lags, emp_acf, emp_pacf, theo_acf, theo_pacf, conf_bound)
     assert isinstance(fig, go.Figure)
 
-
     # Without theoretical overlay (e.g. non-stationary AR)
     fig_none = plot_theoretical_vs_empirical(lags, emp_acf, emp_pacf, None, None, conf_bound)
     assert isinstance(fig_none, go.Figure)
+    print("[PASS] plot_theoretical_vs_empirical smoke tests passed.")
 
 
 def test_plot_hw_components_smoke():
@@ -140,6 +140,7 @@ def test_plot_hw_components_smoke():
     # 3. Empty extras fallback
     fig_empty = plot_hw_components({}, dates)
     assert isinstance(fig_empty, go.Figure)
+    print("[PASS] plot_hw_components smoke tests passed.")
 
 
 def test_plot_grid_results_smoke():
@@ -154,7 +155,22 @@ def test_plot_grid_results_smoke():
     fig = plot_grid_results(grid_data, top_n=3)
     assert isinstance(fig, go.Figure)
 
-
     # Empty DataFrame
     fig_empty = plot_grid_results(pd.DataFrame())
     assert isinstance(fig_empty, go.Figure)
+    print("[PASS] plot_grid_results smoke tests passed.")
+
+
+if __name__ == "__main__":
+    print("==================================================")
+    print("Starting ATSA Plot Models Smoke Tests...")
+    print("==================================================")
+    test_plot_fit_vs_actual_smoke()
+    test_plot_holdout_zoom_smoke()
+    test_plot_inverse_roots_smoke()
+    test_plot_theoretical_vs_empirical_smoke()
+    test_plot_hw_components_smoke()
+    test_plot_grid_results_smoke()
+    print("\n==================================================")
+    print("ALL TESTS IN TEST_PLOTS_MODELS COMPLETED SUCCESSFULLY!")
+    print("==================================================")

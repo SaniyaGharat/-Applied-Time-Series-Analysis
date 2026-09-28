@@ -103,6 +103,34 @@ def test_diebold_mariano():
     print("[PASS] diebold_mariano tests passed.")
 
 
+def test_pairwise_dm_reference_and_unknown_key():
+    """Test pairwise_dm: (a) reference row is the chosen model, (b) unknown key raises ValueError."""
+    print("\n--- Test pairwise_dm reference row and unknown key validation ---")
+    rng = np.random.default_rng(42)
+    dates = pd.date_range("2020-01-01", periods=40, freq="MS")
+    s = pd.Series(np.linspace(10, 30, 40) + rng.normal(0, 1, 40), index=dates)
+
+    m1 = fit_model(s, {"family": "ar", "p": 1, "d": 0, "trend": "c"}, test_size=10)
+    m2 = fit_model(s, {"family": "arima", "p": 1, "d": 1, "q": 1, "trend": "n"}, test_size=10)
+
+    # (a) Verify reference row is the model chosen by reference_key
+    df_m1 = pairwise_dm([m1, m2], reference_key=m1.key)
+    ref_rows = df_m1[df_m1["verdict"] == "reference model"]
+    assert len(ref_rows) == 1, "Expected exactly 1 reference row"
+    assert ref_rows.iloc[0]["Model"] == m1.label, f"Expected reference model '{m1.label}', got '{ref_rows.iloc[0]['Model']}'"
+
+    df_m2 = pairwise_dm([m1, m2], reference_key=m2.key)
+    ref_rows2 = df_m2[df_m2["verdict"] == "reference model"]
+    assert len(ref_rows2) == 1
+    assert ref_rows2.iloc[0]["Model"] == m2.label, f"Expected reference model '{m2.label}', got '{ref_rows2.iloc[0]['Model']}'"
+
+    # (b) Verify unknown key raises ValueError
+    with pytest.raises(ValueError, match="not found in results"):
+        pairwise_dm([m1, m2], reference_key="nonexistent_key_12345")
+
+    print("[PASS] pairwise_dm reference row and unknown key ValueError verified.")
+
+
 def test_comparison_table_and_ranking():
     """Test build_comparison_table on simulated series with naive, ar, and arima."""
     print("\n--- Test build_comparison_table & ranking ---")
@@ -391,6 +419,7 @@ if __name__ == "__main__":
     print("==================================================")
     test_coverage_and_winkler()
     test_diebold_mariano()
+    test_pairwise_dm_reference_and_unknown_key()
     test_comparison_table_and_ranking()
     test_ic_group()
     test_equal_weight_combination()

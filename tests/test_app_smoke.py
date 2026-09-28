@@ -131,20 +131,14 @@ def test_app_smoke_all_ten_models():
         matching_results = [r for r in results.values() if getattr(r, "family", "") == fam_key]
         assert len(matching_results) > 0, f"No result found in model_results for family '{fam_key}'"
         res = matching_results[-1]
-        if not res.converged:
-            # If default SARIMA does not converge on the demo data, the test must assert a readable failure message instead.
-            readable_diag = res.warnings or (res.notes if res.notes else None) or (res.summary_text if res.summary_text else None)
-            assert readable_diag, f"Model '{fam_label}' did not converge, but no readable failure message was provided."
-            print(f"  -> '{fam_label}' did not converge; readable diagnostic: {readable_diag}")
-        else:
-            assert res.converged is True
+        assert res.converged is True, f"Model '{fam_label}' did not converge on demo data: {res.warnings}"
 
         # (iv) Assert number of Plotly charts in Models tab increased versus baseline
         current_charts = len(at.get("plotly_chart"))
         assert current_charts > baseline_charts, (
             f"Expected Plotly charts to increase vs baseline ({baseline_charts}), got {current_charts}"
         )
-        print(f"  -> '{fam_label}' passed: converged=True, charts={current_charts} (baseline={baseline_charts})")
+        print(f"  -> '{fam_label}' passed: converged={res.converged}, charts={current_charts} (baseline={baseline_charts})")
 
     print("[PASS] A7 strengthened assertions verified across all 10 model families.")
 
@@ -176,14 +170,11 @@ st.write(f"Current selection: {selected}")
     print("After select('SARIMA'): 'SARIMA'")
 
     # Deselect / unselect
+    # Note: AppTest cannot unselect single-select pills (Streamlit retains current selection when unselect is called in single-select mode).
     try:
         pills_widgets[0].unselect("SARIMA").run()
         actual_val = pills_widgets[0].value
         print(f"After unselect('SARIMA') actual value: {actual_val}")
-        # Assert that after unselect the pills value is None or falls back as documented
-        assert actual_val is None or actual_val in ["SARIMA", "ARIMA"], (
-            f"Expected pills value to be None or fallback, got: {actual_val}"
-        )
     except Exception as e:
         print(f"unselect on single-mode pills raised exception: {e}")
 
@@ -281,10 +272,21 @@ def test_forecast_tab_and_future_forecasting():
     assert not at.exception
     assert len(at.error) == 0
 
-    # Verify comparison table exists as dataframe widget
-    dataframes = at.dataframe
-    assert len(dataframes) > 0, "No comparison dataframe rendered in Forecast tab"
-    print("Comparison dataframe rendered successfully.")
+    # Verify comparison section reached: comparison table, Top Performer banner, and DM table
+    assert len(at.dataframe) >= 2, f"Expected at least 2 dataframes, got {len(at.dataframe)}"
+    comp_df_present = any(
+        hasattr(df.value, "columns") and "RelRMSE_vs_ref" in df.value.columns
+        for df in at.dataframe
+    )
+    assert comp_df_present, "Comparison leaderboard table not rendered in at.dataframe"
+    dm_df_present = any(
+        hasattr(df.value, "columns") and "DM stat" in df.value.columns
+        for df in at.dataframe
+    )
+    assert dm_df_present, "Pairwise DM table not rendered in at.dataframe"
+    top_performer_banner = any("Top Performer" in s.value for s in at.success)
+    assert top_performer_banner, "Top Performer banner not found in at.success"
+    print("Comparison table, Top Performer banner, and DM table rendered successfully.")
 
     # 3. Generate future forecasts for ARIMA, Holt-Winters, and SARIMAX
     s = at.session_state["model_base_series"]

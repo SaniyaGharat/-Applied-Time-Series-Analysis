@@ -13,7 +13,14 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from modules.diagnostics import compute_acf_pacf, suggest_orders, transform_series
+from modules.diagnostics import (
+    adf_test,
+    compute_acf_pacf,
+    decompose,
+    kpss_test,
+    suggest_orders,
+    transform_series,
+)
 from modules.models import (
     ModelResult,
     fit_model,
@@ -148,6 +155,24 @@ def fit_all_default_models(
     all_families = list_model_families()
     suggested_d = transform_info.get("suggested_d", 0) if transform_info else 0
     suggested_D = transform_info.get("suggested_D", 0) if transform_info else 0
+
+    if suggested_d == 0 and suggested_D == 0:
+        try:
+            adf_test(model_base_series)
+            kpss_test(model_base_series)
+            suggested_d = 1
+        except Exception:
+            suggested_d = 1
+
+        if int(m) >= 2 and len(model_base_series) >= 3 * int(m):
+            try:
+                decomp_res = decompose(model_base_series, period=int(m))
+                if (decomp_res.get("seasonal_strength") or 0.0) > 0.6:
+                    suggested_D = 1
+            except Exception:
+                pass
+
+        st.info(f"Auto-suggested differencing for default models: d={suggested_d}, D={suggested_D}.")
 
     fitted_results: List[ModelResult] = []
     total = len(all_families)

@@ -518,14 +518,55 @@ def fit_model(
                 )
                 res = model_obj.fit(disp=False)
 
-                for w in recorded_w:
+            def _check_sarimax_conv(fit_res, rec_warns):
+                for w in rec_warns:
                     if issubclass(w.category, ConvergenceWarning):
-                        converged = False
-                        collected_warnings.append(f"Convergence issue: {str(w.message)}")
+                        return False
+                if hasattr(fit_res, "mle_retvals") and not fit_res.mle_retvals.get("converged", True):
+                    return False
+                return True
 
-            if hasattr(res, "mle_retvals") and not res.mle_retvals.get("converged", True):
-                converged = False
-                collected_warnings.append("Optimizer reported that MLE estimation did not converge.")
+            retry_method_used: Optional[str] = None
+            if not _check_sarimax_conv(res, recorded_w):
+                candidates = []
+
+                # Retry 1: method="powell", maxiter=500
+                try:
+                    with warnings.catch_warnings(record=True) as w_powell:
+                        warnings.filterwarnings("ignore", category=FutureWarning)
+                        warnings.filterwarnings("ignore", category=UserWarning)
+                        res_powell = model_obj.fit(disp=False, method="powell", maxiter=500)
+                    if _check_sarimax_conv(res_powell, w_powell):
+                        candidates.append(("powell", res_powell))
+                except Exception:
+                    pass
+
+                # Retry 2: default optimizer, maxiter=300
+                try:
+                    with warnings.catch_warnings(record=True) as w_def:
+                        warnings.filterwarnings("ignore", category=FutureWarning)
+                        warnings.filterwarnings("ignore", category=UserWarning)
+                        res_default = model_obj.fit(disp=False, maxiter=300)
+                    if _check_sarimax_conv(res_default, w_def):
+                        candidates.append(("default", res_default))
+                except Exception:
+                    pass
+
+                if candidates:
+                    candidates.sort(
+                        key=lambda x: getattr(x[1], "aic", float("inf"))
+                        if getattr(x[1], "aic", None) is not None and not np.isnan(x[1].aic)
+                        else float("inf")
+                    )
+                    retry_method_used, res = candidates[0]
+                    converged = True
+                else:
+                    converged = False
+                    collected_warnings.append(
+                        "Optimizer reported that MLE estimation did not converge (retried with powell and default maxiter=300)."
+                    )
+            else:
+                converged = True
 
             fitted_vals = res.fittedvalues
             resid = res.resid
@@ -577,6 +618,8 @@ def fit_model(
                         exog_coefs[col] = float(res.params[col])
                 extras["exog_coefs"] = exog_coefs
             notes = f"Estimated via statsmodels SARIMAX (order={order}, seasonal_order={seasonal_order}, trend='{trend_val}')."
+            if retry_method_used:
+                notes = f"{notes} converged after retry ({retry_method_used})."
 
         # ---------------------------------------------------------
         # 3. EXPONENTIAL SMOOTHING (HOLT-WINTERS)
