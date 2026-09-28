@@ -28,7 +28,7 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
 from modules.diagnostics import inverse_variance_transform
-from modules.metrics import accuracy_table, mae, rmse
+from modules.metrics import accuracy_table, mae, mase_scale, rmse
 
 
 @dataclass
@@ -725,7 +725,10 @@ def fit_model(
             index=test_idx,
         )
 
-        metrics_test = accuracy_table(test_y_orig, fc_mean_orig, y_train=train_y_orig, m=mase_m)
+        train_scale = mase_scale(train_y_orig, m=mase_m)
+        extras["mase_scale"] = train_scale
+
+        metrics_test = accuracy_table(test_y_orig, fc_mean_orig, y_train=train_y_orig, m=mase_m, scale=train_scale)
         metrics_train = {
             "rmse": rmse(train_y_orig, fitted_train_orig),
             "mae": mae(train_y_orig, fitted_train_orig),

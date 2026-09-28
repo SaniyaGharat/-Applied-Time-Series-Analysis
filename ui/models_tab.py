@@ -148,6 +148,7 @@ def render_models_tab() -> None:
             key="mase_scale_select",
         )
         mase_m = int(active_m) if "m" in mase_choice and active_m >= 2 else 1
+        st.session_state["model_mase_m_val"] = mase_m
         st.caption(f"Series: **{n}** obs | Train: **{n - holdout_size}** obs | Test: **{holdout_size}** obs | MASE scale m=**{mase_m}**")
 
     st.markdown("---")
@@ -300,7 +301,7 @@ def render_models_tab() -> None:
             with c1:
                 st.session_state.setdefault("form_s_p", int(suggested_p))
                 spec["p"] = st.number_input("AR Order (p):", min_value=0, max_value=10, step=1, key="form_s_p")
-                st.session_state.setdefault("form_s_P", 1 if suggested_D == 0 else 0)
+                st.session_state.setdefault("form_s_P", 1)
                 spec["P"] = st.number_input("Seasonal AR (P):", min_value=0, max_value=3, step=1, key="form_s_P")
             with c2:
                 st.session_state.setdefault("form_s_d", int(suggested_d))
@@ -308,9 +309,9 @@ def render_models_tab() -> None:
                 st.session_state.setdefault("form_s_D", int(suggested_D))
                 spec["D"] = st.number_input("Seasonal Diff (D):", min_value=0, max_value=2, step=1, key="form_s_D")
             with c3:
-                st.session_state.setdefault("form_s_q", 0 if suggested_D == 0 else int(suggested_q))
+                st.session_state.setdefault("form_s_q", int(suggested_q))
                 spec["q"] = st.number_input("MA Order (q):", min_value=0, max_value=10, step=1, key="form_s_q")
-                st.session_state.setdefault("form_s_Q", 0 if suggested_D == 0 else 1)
+                st.session_state.setdefault("form_s_Q", 1)
                 spec["Q"] = st.number_input("Seasonal MA (Q):", min_value=0, max_value=3, step=1, key="form_s_Q")
             with c4:
                 spec["m"] = int(active_m)
@@ -351,7 +352,7 @@ def render_models_tab() -> None:
             transform_info=transform_info,
             exog=exog_df if selected_family == "sarimax" else None,
             m=active_m,
-            mase_m=mase_m,
+            mase_m=st.session_state.get("model_mase_m_val", mase_m),
         )
 
     # Store in session state registry
@@ -626,7 +627,7 @@ def render_models_tab() -> None:
                 grid_crit = st.selectbox("Optimizing Criterion:", options=["AIC", "BIC"], index=0, key="grid_crit_select")
                 max_models = st.number_input("Max Models to Evaluate:", min_value=10, max_value=100, value=40, step=10, key="grid_max_models")
 
-            if st.button("Run grid search", help="Fit all candidate specifications on training data."):
+            if st.button("Run grid search", help="Fit all candidate specifications on training data.", width="stretch"):
                 seasonal_dict = (
                     {"P_range": list(range(P_max + 1)), "D": grid_D, "Q_range": list(range(Q_max + 1)), "m": active_m}
                     if selected_family == "sarima"
@@ -661,7 +662,7 @@ def render_models_tab() -> None:
 
                 st.dataframe(grid_df.drop(columns=["spec_dict"]).head(20), width="stretch")
 
-                if st.button("Use best order", help="Inject best hyperparameters into form widgets."):
+                if st.button("Use best order", help="Inject best hyperparameters into form widgets.", width="stretch"):
                     best_s = best_info["best_spec"]
                     pending = {}
                     if selected_family == "arima":
@@ -689,13 +690,13 @@ def render_models_tab() -> None:
             "store their results in session state, and compare their holdout performance."
         )
 
-        if st.button("Fit all models"):
+        if st.button("Fit all models", width="stretch"):
             progress_bar = st.progress(0.0)
             fitted_all = fit_all_default_models(
                 model_base_series=model_base_series,
                 holdout_size=holdout_size,
                 m=int(active_m),
-                mase_m=mase_m,
+                mase_m=st.session_state.get("model_mase_m_val", mase_m),
                 transform_info=transform_info,
                 exog_df=exog_df,
                 progress_callback=lambda p: progress_bar.progress(p),

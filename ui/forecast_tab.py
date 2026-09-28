@@ -102,7 +102,7 @@ def render_forecast_tab() -> None:
             "ℹ️ No models have been estimated yet in the session. You can fit individual models in the "
             "**🧮 Models** tab or click the button below to automatically estimate all standard models now."
         )
-        if st.button("🚀 Fit all default models", key="fc_fit_all_btn"):
+        if st.button("🚀 Fit all default models", key="fc_fit_all_btn", width="stretch"):
             with st.spinner("Fitting all candidate model families..."):
                 fit_all_default_models(
                     model_base_series=model_base_series,
@@ -120,7 +120,7 @@ def render_forecast_tab() -> None:
     eligible_models: List[ModelResult] = []
     for r in model_results.values():
         t_idx = getattr(r, "test_index", None)
-        if t_idx is not None and len(t_idx) == holdout_size:
+        if t_idx is not None:
             if hasattr(t_idx, "equals") and t_idx.equals(current_holdout_idx):
                 eligible_models.append(r)
             elif list(t_idx) == list(current_holdout_idx):
@@ -131,7 +131,7 @@ def render_forecast_tab() -> None:
             f"ℹ️ Currently fitted models were estimated with a different holdout size than the active "
             f"setting ({holdout_size}). Please fit models in the **🧮 Models** tab or fit all defaults below."
         )
-        if st.button("🚀 Refit all default models to current holdout", key="fc_refit_all_btn"):
+        if st.button("🚀 Refit all default models to current holdout", key="fc_refit_all_btn", width="stretch"):
             with st.spinner("Refitting all candidate models..."):
                 fit_all_default_models(
                     model_base_series=model_base_series,
@@ -319,6 +319,7 @@ def render_forecast_tab() -> None:
         file_name="atsa_model_comparison_leaderboard.csv",
         mime="text/csv",
         key="btn_download_comparison_csv",
+        width="stretch",
     )
 
     # -------------------------------------------------------------
@@ -417,7 +418,7 @@ def render_forecast_tab() -> None:
     if "forecast_results" not in st.session_state:
         st.session_state["forecast_results"] = {}
 
-    if st.button("🔮 Generate forecast", type="primary", key="btn_generate_forecast"):
+    if st.button("🔮 Generate forecast", type="primary", key="btn_generate_forecast", width="stretch"):
         with st.spinner(f"Refitting {chosen_result.label} on full dataset and forecasting {steps_ahead} steps..."):
             try:
                 exog_hash = ""
@@ -536,6 +537,7 @@ def render_forecast_tab() -> None:
                 file_name=f"atsa_{active_fc.label.lower().replace(' ', '_')}_forecast.csv",
                 mime="text/csv",
                 key="btn_download_future_csv",
+                width="stretch",
             )
 
         with d_c2:
@@ -574,4 +576,5 @@ def render_forecast_tab() -> None:
                 file_name="atsa_complete_forecast_report.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="btn_download_excel_report",
+                width="stretch",
             )

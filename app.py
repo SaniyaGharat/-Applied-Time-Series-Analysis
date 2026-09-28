@@ -65,6 +65,7 @@ def init_session_state() -> None:
         },
         "model_results": {},
         "forecast_results": {},
+        "model_mase_m_val": 1,
         "pending_spec": None,
         "selected_model_family": None,
         "uploader_key": 0,

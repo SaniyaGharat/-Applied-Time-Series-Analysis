@@ -472,7 +472,7 @@ def render_eda_tab() -> None:
             # Action Buttons to set or reset model series
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("🚀 Use Transformed Series for Modeling", help="Save variance-stabilized series and suggested d, D for modeling."):
+                if st.button("🚀 Use Transformed Series for Modeling", help="Save variance-stabilized series and suggested d, D for modeling.", width="stretch"):
                     tf_info_copy = dict(tf_info)
                     tf_info_copy["suggested_d"] = diff_d
                     tf_info_copy["suggested_D"] = seas_d
@@ -486,7 +486,7 @@ def render_eda_tab() -> None:
                     st.rerun()
 
             with btn_col2:
-                if st.button("↺ Reset to Original Regularized Series", help="Restore active modeling series to original regularized data."):
+                if st.button("↺ Reset to Original Regularized Series", help="Restore active modeling series to original regularized data.", width="stretch"):
                     st.session_state["model_series"] = series
                     st.session_state["model_base_series"] = series
                     st.session_state["transform_info"] = {

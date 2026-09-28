@@ -82,16 +82,43 @@ def smape(y_true: Union[pd.Series, np.ndarray, list], y_pred: Union[pd.Series, n
     return float(np.mean(200.0 * np.abs(yt[valid] - yp[valid]) / denom[valid]))
 
 
+def mase_scale(
+    y_train: Optional[Union[pd.Series, np.ndarray, list]],
+    m: int = 1,
+) -> float:
+    """
+    Calculate the in-sample scaling factor for MASE:
+    mean absolute difference of a seasonal naive benchmark on y_train.
+    """
+    if y_train is None:
+        return float("nan")
+    ytrain = np.asarray(y_train, dtype=float).ravel()
+    ytrain = ytrain[~np.isnan(ytrain)]
+    if len(ytrain) <= 1:
+        return float("nan")
+
+    period_m = max(1, int(m or 1))
+    if len(ytrain) <= period_m:
+        period_m = 1
+
+    scale = float(np.mean(np.abs(ytrain[period_m:] - ytrain[:-period_m])))
+    if scale == 0:
+        scale = 1e-8
+    return scale
+
+
 def mase(
     y_true: Union[pd.Series, np.ndarray, list],
     y_pred: Union[pd.Series, np.ndarray, list],
     y_train: Optional[Union[pd.Series, np.ndarray, list]] = None,
     m: int = 1,
+    scale: Optional[float] = None,
 ) -> float:
     """
     Calculate Mean Absolute Scaled Error (MASE).
 
-    Scales MAE by the in-sample mean absolute difference of a seasonal naive benchmark on y_train.
+    Scales MAE by the in-sample mean absolute difference of a seasonal naive benchmark on y_train,
+    or by an explicitly provided scale factor.
     """
     yt, yp = _to_numpy_arrays(y_true, y_pred)
     current_mae = mae(yt, yp)
@@ -99,24 +126,17 @@ def mase(
     if np.isnan(current_mae):
         return float("nan")
 
+    if scale is not None and not np.isnan(scale):
+        s = float(scale) if float(scale) != 0 else 1e-8
+        return float(current_mae / s)
+
     if y_train is None:
         return current_mae
 
-    ytrain = np.asarray(y_train, dtype=float).ravel()
-    ytrain = ytrain[~np.isnan(ytrain)]
-
-    period_m = max(1, int(m or 1))
-    if len(ytrain) <= period_m:
-        period_m = 1
-
-    if len(ytrain) <= 1:
+    sc = mase_scale(y_train, m=m)
+    if np.isnan(sc):
         return current_mae
-
-    scale = np.mean(np.abs(ytrain[period_m:] - ytrain[:-period_m]))
-    if scale == 0:
-        scale = 1e-8
-
-    return float(current_mae / scale)
+    return float(current_mae / sc)
 
 
 def accuracy_table(
@@ -124,6 +144,7 @@ def accuracy_table(
     y_pred: Union[pd.Series, np.ndarray, list],
     y_train: Optional[Union[pd.Series, np.ndarray, list]] = None,
     m: int = 1,
+    scale: Optional[float] = None,
 ) -> Dict[str, float]:
     """
     Compute full dictionary of forecast accuracy metrics: RMSE, MAE, MAPE, sMAPE, and MASE.
@@ -133,7 +154,7 @@ def accuracy_table(
         "mae": mae(y_true, y_pred),
         "mape": mape(y_true, y_pred),
         "smape": smape(y_true, y_pred),
-        "mase": mase(y_true, y_pred, y_train=y_train, m=m),
+        "mase": mase(y_true, y_pred, y_train=y_train, m=m, scale=scale),
     }
 
 

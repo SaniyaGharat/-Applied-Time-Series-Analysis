@@ -112,7 +112,7 @@ def render_data_tab() -> None:
     with demo_col:
         st.write("")
         st.write("")
-        if st.button("🧪 Load Demo Data", help="Load reproducible monthly demo data (seed=42)."):
+        if st.button("🧪 Load Demo Data", help="Load reproducible monthly demo data (seed=42).", width="stretch"):
             st.session_state["raw_df"] = create_demo_data()
             st.session_state["source_name"] = "Demo Data (Synthetic Monthly, Seed=42)"
             st.session_state.pop("uploaded_file_id", None)
@@ -124,7 +124,7 @@ def render_data_tab() -> None:
     with clear_col:
         st.write("")
         st.write("")
-        if st.button("🗑️ Clear Data", help="Reset all data and clear widget state."):
+        if st.button("🗑️ Clear Data", help="Reset all data and clear widget state.", width="stretch"):
             clear_data_action()
             st.rerun()
 

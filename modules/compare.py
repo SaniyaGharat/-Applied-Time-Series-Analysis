@@ -65,6 +65,20 @@ def ic_group(result: Union[ModelResult, Dict[str, Any]]) -> str:
     return "n/a"
 
 
+METRIC_COLUMN_MAP = {
+    "RMSE": "RMSE",
+    "MAE": "MAE",
+    "MAPE": "MAPE",
+    "SMAPE": "sMAPE",
+    "MASE": "MASE",
+}
+
+
+def map_metric_column(metric: str) -> str:
+    """Standardize user metric name to comparison table column name."""
+    return METRIC_COLUMN_MAP.get(str(metric).strip().upper(), "RMSE")
+
+
 def build_comparison_table(
     results: List[ModelResult],
     rank_by: str = "rmse",
@@ -170,10 +184,8 @@ def build_comparison_table(
 
     df = pd.DataFrame(rows)
 
-    # Sort & Rank by requested metric (case-insensitive)
-    sort_key = rank_by.upper()
-    metric_cols_upper = {c.upper(): c for c in ["RMSE", "MAE", "MAPE", "sMAPE", "MASE"]}
-    target_col = metric_cols_upper.get(sort_key, "RMSE")
+    # Sort & Rank by requested metric (case-insensitive) using shared column mapping
+    target_col = map_metric_column(rank_by)
 
     # Split into converged and non-converged
     conv_mask = df["Converged"] == True
@@ -232,8 +244,15 @@ def equal_weight_combination(results: List[ModelResult]) -> Optional[ModelResult
             test_actual = act
             break
 
+    # Retrieve mase_scale from member models' extras
+    mase_scale_val = None
+    for r in converged:
+        if isinstance(getattr(r, "extras", None), dict) and "mase_scale" in r.extras:
+            mase_scale_val = r.extras["mase_scale"]
+            break
+
     if test_actual is not None:
-        metrics = accuracy_table(test_actual, mean_forecast, y_train=None, m=1)
+        metrics = accuracy_table(test_actual, mean_forecast, scale=mase_scale_val)
     else:
         metrics = {
             "rmse": np.nan,
@@ -267,7 +286,7 @@ def equal_weight_combination(results: List[ModelResult]) -> Optional[ModelResult
         converged=True,
         fit_seconds=0.0,
         notes=f"Arithmetic average of forecasts from: {', '.join([r.label for r in converged])}.",
-        extras={},
+        extras={"mase_scale": mase_scale_val} if mase_scale_val is not None else {},
         test_actual=test_actual,
     )
 
@@ -374,24 +393,31 @@ def pairwise_dm(
 def best_model(table: pd.DataFrame, metric: str = "RMSE") -> Optional[str]:
     """
     Return the key of the top-ranked converged model from the comparison table.
+    Uses the Rank==1 row's key, or falls back to ranking by the specified metric
+    using the shared column mapping.
     """
     if table.empty:
         return None
 
-    conv = table[table["Converged"] == True]
+    conv = table[table["Converged"] == True] if "Converged" in table.columns else table
     if conv.empty:
         return None
 
-    if "Rank" in conv.columns and conv["Rank"].notna().any():
-        ranked = conv.sort_values(by="Rank", ascending=True)
-        first_row = ranked.iloc[0]
-    else:
-        target_col = metric.upper()
-        cols = {c.upper(): c for c in conv.columns}
-        actual_col = cols.get(target_col, "RMSE")
-        ranked = conv.sort_values(by=actual_col, ascending=True)
-        first_row = ranked.iloc[0]
+    # Return the Rank==1 row's key
+    if "Rank" in conv.columns:
+        rank_1 = conv[conv["Rank"] == 1]
+        if not rank_1.empty:
+            first_row = rank_1.iloc[0]
+            return str(first_row.get("Key", first_row.get("Model", "")))
 
+    # Fallback using shared column mapping
+    target_col = map_metric_column(metric)
+    if target_col in conv.columns:
+        ranked = conv.sort_values(by=target_col, ascending=True)
+        first_row = ranked.iloc[0]
+        return str(first_row.get("Key", first_row.get("Model", "")))
+
+    first_row = conv.iloc[0]
     return str(first_row.get("Key", first_row.get("Model", "")))
 
 

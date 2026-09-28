@@ -138,10 +138,20 @@ def test_comparison_table_and_ranking():
     best_row = conv_table[conv_table["Rank"] == 1].iloc[0]
     assert best_row["RMSE"] == conv_table["RMSE"].min()
 
+    # Best model function returns Rank == 1 row's key
+    assert best_model(table) == best_row["Key"]
+    assert best_model(table, metric="rmse") == best_row["Key"]
+
+    # Ranking by another metric (e.g. MAE)
+    table_mae = build_comparison_table([m_naive, m_ar, m_arima, m_failed], rank_by="mae", reference_family="naive")
+    best_mae_row = table_mae[table_mae["Rank"] == 1].iloc[0]
+    assert best_model(table_mae, metric="MAE") == best_mae_row["Key"]
+    assert best_model(table_mae, metric="mae") == best_mae_row["Key"]
+
     # Failed model is ranked last with NaN rank
     failed_row = table[table["Converged"] == False].iloc[0]
     assert np.isnan(failed_row["Rank"]) or failed_row["Rank"] is None
-    print("[PASS] build_comparison_table assertions passed.")
+    print("[PASS] build_comparison_table and best_model assertions passed.")
 
 
 def test_ic_group():
@@ -195,14 +205,14 @@ def test_equal_weight_combination():
         train_index=idx, test_index=idx, fitted_train=pd.Series(index=idx),
         test_forecast=df1, residuals=pd.Series(), metrics_test={}, metrics_train={},
         information_criteria=None, params_table=None, summary_text="", ljung_box=None,
-        normality={}, converged=True, test_actual=actual,
+        normality={}, converged=True, test_actual=actual, extras={"mase_scale": 2.0},
     )
     r2 = ModelResult(
         key="m2", label="Model 2", family="arima", spec={"family": "arima"},
         train_index=idx, test_index=idx, fitted_train=pd.Series(index=idx),
         test_forecast=df2, residuals=pd.Series(), metrics_test={}, metrics_train={},
         information_criteria=None, params_table=None, summary_text="", ljung_box=None,
-        normality={}, converged=True, test_actual=actual,
+        normality={}, converged=True, test_actual=actual, extras={"mase_scale": 2.0},
     )
 
     combo = equal_weight_combination([r1, r2])
@@ -211,7 +221,36 @@ def test_equal_weight_combination():
     assert np.allclose(combo.test_forecast["mean"].values, expected_mean)
     assert np.isnan(combo.test_forecast["lower"]).all()
     assert np.isnan(combo.test_forecast["upper"]).all()
+    assert combo.extras.get("mase_scale") == 2.0
+    # Mean forecast matches actual exactly, so MAE is 0.0 and MASE is 0.0 / 2.0 = 0.0
+    assert np.isclose(combo.metrics_test["mase"], 0.0)
     print("[PASS] equal_weight_combination mean and intervals verified.")
+
+
+def test_equal_weight_combination_mase_scale_reuse():
+    """Test that equal_weight_combination reuses extras['mase_scale'] from members."""
+    print("\n--- Test equal_weight_combination MASE scale reuse ---")
+    rng = np.random.default_rng(42)
+    n = 60
+    dates = pd.date_range("2020-01-01", periods=n, freq="MS")
+    s = pd.Series(np.linspace(10, 30, n) + rng.normal(0, 1, n), index=dates)
+
+    m1 = fit_model(s, {"family": "ar", "p": 1, "d": 0, "trend": "c"}, test_size=12, mase_m=12)
+    m2 = fit_model(s, {"family": "arima", "p": 1, "d": 1, "q": 1, "trend": "n"}, test_size=12, mase_m=12)
+
+    assert "mase_scale" in m1.extras
+    assert "mase_scale" in m2.extras
+    assert m1.extras["mase_scale"] > 0
+    assert np.isclose(m1.extras["mase_scale"], m2.extras["mase_scale"])
+
+    combo = equal_weight_combination([m1, m2])
+    assert combo is not None
+    assert "mase_scale" in combo.extras
+    assert np.isclose(combo.extras["mase_scale"], m1.extras["mase_scale"])
+    assert not np.isnan(combo.metrics_test["mase"])
+    expected_mase = combo.metrics_test["mae"] / combo.extras["mase_scale"]
+    assert np.isclose(combo.metrics_test["mase"], expected_mase)
+    print("[PASS] equal_weight_combination successfully reused mase_scale from member models.")
 
 
 def test_make_future_exog():
@@ -355,6 +394,7 @@ if __name__ == "__main__":
     test_comparison_table_and_ranking()
     test_ic_group()
     test_equal_weight_combination()
+    test_equal_weight_combination_mase_scale_reuse()
     test_make_future_exog()
     test_fit_full_and_forecast_detailed()
     test_excel_export_openpyxl()
