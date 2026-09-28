@@ -5,7 +5,8 @@ Provides utility functions to:
 - Ingest uploaded CSV and Excel datasets.
 - Auto-detect candidate date and numeric columns using strict heuristics.
 - Parse datetime series, handle year-only integer columns, and set datetime indices.
-- Regularize time series: merge duplicates, enforce uniform frequency, and fill gaps.
+- Regularize time series: merge duplicates, enforce uniform frequency with alias compatibility,
+  check timestamp alignment (fallback to resample on mismatch), and fill missing values.
 - Produce clean pandas DataFrame/Series ready for time series analysis.
 """
 
@@ -14,6 +15,50 @@ import io
 import re
 import numpy as np
 import pandas as pd
+from packaging.version import Version
+
+PANDAS_GE_2_2 = Version(pd.__version__) >= Version("2.2.0")
+
+
+def normalize_pandas_freq(freq_str: Optional[str]) -> Optional[str]:
+    """
+    Map frequency string to modern or legacy pandas offset aliases based on installed pandas version.
+
+    Parameters
+    ----------
+    freq_str : Optional[str]
+        Raw frequency string or friendly label (e.g. 'ME - Month End').
+
+    Returns
+    -------
+    Optional[str]
+        Normalized pandas frequency alias.
+    """
+    if not freq_str or freq_str == "Auto-detect":
+        return None
+
+    # Extract base token before any hyphen or description
+    base_freq = freq_str.split()[0].strip()
+
+    modern_map = {
+        "M": "ME",
+        "Q": "QE",
+        "H": "h",
+        "Y": "YE",
+        "A": "YE",
+        "AS": "YS",
+    }
+    legacy_map = {
+        "ME": "M",
+        "QE": "Q",
+        "h": "H",
+        "YE": "Y",
+    }
+
+    if PANDAS_GE_2_2:
+        return modern_map.get(base_freq, base_freq)
+    else:
+        return legacy_map.get(base_freq, base_freq)
 
 
 def load_uploaded_file(uploaded_file) -> pd.DataFrame:
@@ -243,14 +288,16 @@ def regularize_series(
     fill_method: str = "interpolate",
 ) -> Tuple[pd.Series, dict]:
     """
-    Regularize a time series by handling duplicates, applying frequency, and filling missing values.
+    Regularize a time series by handling duplicates, applying frequency with alias compatibility,
+    validating timestamp alignment (falling back to resample aggregation if asfreq yields >50% new NaNs),
+    and filling missing values.
 
     Parameters
     ----------
     series : pd.Series
         Time series indexed with DatetimeIndex.
     freq : Optional[str], default=None
-        Target frequency string ('D', 'W', 'MS', 'M', 'Q', 'QS', 'YS', 'H') or None/'Auto-detect'.
+        Target frequency string ('D', 'W', 'MS', 'ME'/'M', 'Q'/'QE', 'QS', 'YS', 'h'/'H') or None/'Auto-detect'.
     fill_method : str, default='interpolate'
         Method to fill missing observations: 'interpolate', 'ffill', 'bfill', or 'drop'.
 
@@ -258,7 +305,8 @@ def regularize_series(
     -------
     Tuple[pd.Series, dict]
         Cleaned, regularized pd.Series and a report dict with:
-        {'duplicates_merged': int, 'rows_added': int, 'nans_filled': int, 'freq_used': str}
+        {'duplicates_merged': int, 'rows_added': int, 'nans_filled': int, 'freq_used': str,
+         'method': str, 'warning': Optional[str]}
     """
     if not isinstance(series.index, pd.DatetimeIndex):
         raise ValueError("Series index must be a pandas DatetimeIndex.")
@@ -273,35 +321,68 @@ def regularize_series(
         s = s_dedup
 
     # 2. Determine frequency
-    freq_used = freq
-    if freq_used is None or freq_used == "Auto-detect":
-        freq_used = pd.infer_freq(s.index)
-        if freq_used is None and len(s.index) >= 2:
-            # Fallback heuristic for frequency detection with missing dates
+    normalized_target_freq = normalize_pandas_freq(freq)
+    freq_used = normalized_target_freq
+
+    if freq_used is None:
+        inferred = pd.infer_freq(s.index)
+        if inferred:
+            freq_used = normalize_pandas_freq(inferred)
+        elif len(s.index) >= 2:
+            # Fallback heuristic for frequency detection when missing dates exist
             diffs = (s.index[1:] - s.index[:-1]).total_seconds()
             min_sec = diffs.min()
             if 3500 <= min_sec <= 3700:
-                freq_used = "H"
+                freq_used = "h" if PANDAS_GE_2_2 else "H"
             elif 85000 <= min_sec <= 87000:
                 freq_used = "D"
             elif 6 * 86400 <= min_sec <= 8 * 86400:
                 freq_used = "W"
             elif 27 * 86400 <= min_sec <= 32 * 86400:
-                freq_used = "MS" if all(d.day == 1 for d in s.index[:5]) else "M"
+                is_month_start = all(d.day == 1 for d in s.index[:5])
+                freq_used = "MS" if is_month_start else ("ME" if PANDAS_GE_2_2 else "M")
             elif 85 * 86400 <= min_sec <= 95 * 86400:
-                freq_used = "QS" if all(d.day == 1 for d in s.index[:5]) else "Q"
+                is_q_start = all(d.day == 1 for d in s.index[:5])
+                freq_used = "QS" if is_q_start else ("QE" if PANDAS_GE_2_2 else "Q")
             elif 360 * 86400 <= min_sec <= 370 * 86400:
                 freq_used = "YS"
 
-    # 3. Apply asfreq if frequency is identified
+    # 3. Apply frequency alignment with alignment check
     rows_added = 0
+    method_used = "none"
+    warning_msg = None
+
     if freq_used is not None:
         try:
             s_asfreq = s.asfreq(freq_used)
-            rows_added = len(s_asfreq) - len(s)
-            s = s_asfreq
-        except Exception:
-            pass
+            new_nans = int(s_asfreq.isna().sum()) - int(s.isna().sum())
+
+            # Alignment check: if asfreq would produce mostly NaN (>50% of resulting rows are new NaNs)
+            if len(s_asfreq) > 0 and (new_nans / len(s_asfreq)) > 0.5:
+                s_resampled = s.resample(freq_used).mean()
+                method_used = "resample"
+                warning_msg = (
+                    f"Selected frequency '{freq_used}' does not align with timestamps (asfreq would produce "
+                    f">50% missing values). Automatically fell back to resample().mean() aggregation."
+                )
+                rows_added = max(0, len(s_resampled) - len(s))
+                s = s_resampled
+            else:
+                method_used = "asfreq"
+                rows_added = len(s_asfreq) - len(s)
+                s = s_asfreq
+        except Exception as asfreq_err:
+            try:
+                s_resampled = s.resample(freq_used).mean()
+                method_used = "resample"
+                warning_msg = f"asfreq('{freq_used}') failed ({asfreq_err}); fell back to resample().mean()."
+                rows_added = max(0, len(s_resampled) - len(s))
+                s = s_resampled
+            except Exception as resample_err:
+                raise ValueError(
+                    f"Frequency alignment failed for frequency '{freq_used}'. "
+                    f"asfreq error: {asfreq_err}; resample error: {resample_err}"
+                ) from resample_err
 
     # 4. Fill missing values
     nans_before = int(s.isna().sum())
@@ -332,6 +413,8 @@ def regularize_series(
         "rows_added": int(rows_added),
         "nans_filled": int(nans_filled),
         "freq_used": str(freq_used) if freq_used else "None (Irregular)",
+        "method": method_used,
+        "warning": warning_msg,
     }
 
     return s, report
