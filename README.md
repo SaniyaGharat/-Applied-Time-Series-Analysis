@@ -4,28 +4,23 @@ An interactive Streamlit web application designed for end-to-end applied time se
 
 ---
 
-## 🚀 Project Overview
+## 🚀 Project Roadmap
 
-The goal of this application is to provide a clean, modular platform for loading, exploring, modeling, and forecasting time series data.
+The application is structured into the following sequential development phases:
 
-### Development Roadmap
-- **Phase 1: Project Skeleton & Data Ingestion** *(Current)*
-  - Modular project structure.
-  - CSV and Excel file upload.
-  - Auto-detection and confirmation of date and target numeric columns.
-  - Datetime index parsing, sorting, and summary metrics.
-  - Interactive preview and time series line plot.
-- **Phase 2: Exploratory Data Analysis & Decomposition** *(Upcoming)*
-  - Trend and seasonality inspection.
-  - Classical and STL decomposition (additive / multiplicative).
-  - Autocorrelation (ACF) and Partial Autocorrelation (PACF) plots.
-- **Phase 3: Stationarity & Preprocessing** *(Upcoming)*
-  - Augmented Dickey-Fuller (ADF) & KPSS tests.
-  - Differencing, log transformations, and missing data imputation.
-- **Phase 4: Time Series Modeling & Forecasting** *(Upcoming)*
-  - Classical statistical models (ARIMA, SARIMA, Exponential Smoothing).
-  - Train/test splitting and forecast validation.
-  - Performance metrics (RMSE, MAE, MAPE).
+- **Phase 1: Data Ingestion** `[Active]`
+  - Robust file upload (CSV, XLSX, XLS) and reproducible demo dataset generator.
+  - Column auto-detection (tightened date heuristics, numeric targets, integer-like Year parsing).
+  - Day-first date parsing support (`dd/mm/yyyy`).
+  - Preprocessing and regularization (duplicate aggregation by mean, frequency alignment, missing data filling).
+  - Streamlit `session_state` persistence and data clearing.
+  - Interactive preview and Plotly time series visualization.
+- **Phase 2: EDA & Diagnostics (stationarity, ACF/PACF, decomposition)** `[Upcoming]`
+- **Phase 3: Model Zoo (AR, MA, ARMA, ARIMA, SARIMA, SARIMAX, Holt-Winters)** `[Upcoming]`
+- **Phase 4: Model Selector UI with per-model plots** `[Upcoming]`
+- **Phase 5: Forecast & Metrics Comparison** `[Upcoming]`
+- **Phase 6: Deployment** `[Upcoming]`
+- **Phase 7: Polish** `[Upcoming]`
 
 ---
 
@@ -38,7 +33,7 @@ atsa/
 ├── README.md                # Project documentation
 └── modules/
     ├── __init__.py          # Python package initializer
-    ├── data_loader.py       # File ingestion, date detection, time-series preparation
+    ├── data_loader.py       # File ingestion, date detection, time-series regularization
     └── utils.py             # Shared helper functions (placeholder for future phases)
 ```
 

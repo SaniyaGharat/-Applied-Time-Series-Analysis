@@ -3,8 +3,9 @@ Data Loader Module for Applied Time Series Analysis (ATSA).
 
 Provides utility functions to:
 - Ingest uploaded CSV and Excel datasets.
-- Auto-detect candidate date and numeric columns.
-- Parse datetime series, sort chronologically, and set datetime indices.
+- Auto-detect candidate date and numeric columns using strict heuristics.
+- Parse datetime series, handle year-only integer columns, and set datetime indices.
+- Regularize time series: merge duplicates, enforce uniform frequency, and fill gaps.
 - Produce clean pandas DataFrame/Series ready for time series analysis.
 """
 
@@ -52,12 +53,14 @@ def load_uploaded_file(uploaded_file) -> pd.DataFrame:
 
 def detect_date_columns(df: pd.DataFrame) -> List[str]:
     """
-    Auto-detect candidate date/time columns in a DataFrame.
+    Auto-detect candidate date/time columns in a DataFrame using strict heuristics.
 
     Checks:
     1. Columns with explicit datetime dtypes.
-    2. Column names matching common temporal keywords (date, time, timestamp, year, month, etc.).
-    3. Non-numeric object columns whose initial sample values can be parsed as dates.
+    2. Column names matching whole words or common token boundaries for temporal terms:
+       (date, datetime, timestamp, time, year, month, period, ds).
+    3. Integer/float columns whose non-null values fall entirely within the 1800-2100 year range.
+    4. Non-numeric object columns whose initial sample values can be parsed as dates.
 
     Parameters
     ----------
@@ -77,16 +80,33 @@ def detect_date_columns(df: pd.DataFrame) -> List[str]:
         if pd.api.types.is_datetime64_any_dtype(df[col]):
             candidates.append(col)
 
-    # 2. Heuristic based on column naming patterns
+    # 2. Strict regex matching whole words or token boundaries (not arbitrary substrings)
     date_pattern = re.compile(
-        r"(date|time|timestamp|year|period|day|month|ds|datetime|dt)",
-        re.IGNORECASE
+        r"(?:^|[_\s-])(date|datetime|timestamp|time|year|month|period|ds)(?:$|[_\s-])",
+        re.IGNORECASE,
     )
     for col in col_names:
         if col not in candidates and date_pattern.search(str(col)):
             candidates.append(col)
 
-    # 3. Sample parsing check on remaining object / string columns
+    # 3. Check for integer-like year columns (1800 to 2100)
+    for col in col_names:
+        if col in candidates:
+            continue
+        try:
+            non_na = df[col].dropna()
+            if not non_na.empty:
+                numeric_vals = pd.to_numeric(non_na, errors="coerce")
+                if (
+                    numeric_vals.notna().all()
+                    and (numeric_vals.astype(int) == numeric_vals).all()
+                    and numeric_vals.between(1800, 2100).all()
+                ):
+                    candidates.append(col)
+        except Exception:
+            pass
+
+    # 4. Sample parsing check on remaining object / string columns
     for col in col_names:
         if col in candidates:
             continue
@@ -127,9 +147,13 @@ def prepare_time_series(
     target_col: Optional[str] = None,
     sort_index: bool = True,
     drop_na_dates: bool = True,
+    dayfirst: bool = False,
 ) -> Union[pd.DataFrame, pd.Series]:
     """
     Parse the designated date column, set it as the DatetimeIndex, and clean the dataset.
+
+    Handles integer-like Year values (1800-2100) with format="%Y" rather than epoch timestamps.
+    Respects dayfirst parameter for international date formats (dd/mm/yyyy).
 
     Parameters
     ----------
@@ -144,6 +168,8 @@ def prepare_time_series(
         Whether to sort the data chronologically by date.
     drop_na_dates : bool, default=True
         Whether to drop rows where the date could not be parsed.
+    dayfirst : bool, default=False
+        Whether date strings have day first (dd/mm/yyyy).
 
     Returns
     -------
@@ -160,8 +186,33 @@ def prepare_time_series(
 
     cleaned_df = df.copy()
 
-    # Parse datetime
-    cleaned_df[date_col] = pd.to_datetime(cleaned_df[date_col], errors="coerce")
+    # Check if column is integer-like Year values (1800 to 2100)
+    is_year_col = False
+    try:
+        non_na = cleaned_df[date_col].dropna()
+        if not non_na.empty:
+            num_vals = pd.to_numeric(non_na, errors="coerce")
+            if (
+                num_vals.notna().all()
+                and (num_vals.astype(int) == num_vals).all()
+                and num_vals.between(1800, 2100).all()
+            ):
+                is_year_col = True
+    except Exception:
+        is_year_col = False
+
+    if is_year_col:
+        cleaned_df[date_col] = pd.to_datetime(
+            pd.to_numeric(cleaned_df[date_col], errors="coerce").astype("Int64").astype(str),
+            format="%Y",
+            errors="coerce",
+        )
+    else:
+        cleaned_df[date_col] = pd.to_datetime(
+            cleaned_df[date_col],
+            dayfirst=dayfirst,
+            errors="coerce",
+        )
 
     if drop_na_dates:
         cleaned_df = cleaned_df.dropna(subset=[date_col])
@@ -186,6 +237,106 @@ def prepare_time_series(
     return cleaned_df
 
 
+def regularize_series(
+    series: pd.Series,
+    freq: Optional[str] = None,
+    fill_method: str = "interpolate",
+) -> Tuple[pd.Series, dict]:
+    """
+    Regularize a time series by handling duplicates, applying frequency, and filling missing values.
+
+    Parameters
+    ----------
+    series : pd.Series
+        Time series indexed with DatetimeIndex.
+    freq : Optional[str], default=None
+        Target frequency string ('D', 'W', 'MS', 'M', 'Q', 'QS', 'YS', 'H') or None/'Auto-detect'.
+    fill_method : str, default='interpolate'
+        Method to fill missing observations: 'interpolate', 'ffill', 'bfill', or 'drop'.
+
+    Returns
+    -------
+    Tuple[pd.Series, dict]
+        Cleaned, regularized pd.Series and a report dict with:
+        {'duplicates_merged': int, 'rows_added': int, 'nans_filled': int, 'freq_used': str}
+    """
+    if not isinstance(series.index, pd.DatetimeIndex):
+        raise ValueError("Series index must be a pandas DatetimeIndex.")
+
+    s = series.copy()
+
+    # 1. Handle duplicate dates by aggregating by mean
+    duplicates_merged = 0
+    if s.index.has_duplicates:
+        s_dedup = s.groupby(level=0).mean()
+        duplicates_merged = len(s) - len(s_dedup)
+        s = s_dedup
+
+    # 2. Determine frequency
+    freq_used = freq
+    if freq_used is None or freq_used == "Auto-detect":
+        freq_used = pd.infer_freq(s.index)
+        if freq_used is None and len(s.index) >= 2:
+            # Fallback heuristic for frequency detection with missing dates
+            diffs = (s.index[1:] - s.index[:-1]).total_seconds()
+            min_sec = diffs.min()
+            if 3500 <= min_sec <= 3700:
+                freq_used = "H"
+            elif 85000 <= min_sec <= 87000:
+                freq_used = "D"
+            elif 6 * 86400 <= min_sec <= 8 * 86400:
+                freq_used = "W"
+            elif 27 * 86400 <= min_sec <= 32 * 86400:
+                freq_used = "MS" if all(d.day == 1 for d in s.index[:5]) else "M"
+            elif 85 * 86400 <= min_sec <= 95 * 86400:
+                freq_used = "QS" if all(d.day == 1 for d in s.index[:5]) else "Q"
+            elif 360 * 86400 <= min_sec <= 370 * 86400:
+                freq_used = "YS"
+
+    # 3. Apply asfreq if frequency is identified
+    rows_added = 0
+    if freq_used is not None:
+        try:
+            s_asfreq = s.asfreq(freq_used)
+            rows_added = len(s_asfreq) - len(s)
+            s = s_asfreq
+        except Exception:
+            pass
+
+    # 4. Fill missing values
+    nans_before = int(s.isna().sum())
+    nans_filled = 0
+
+    if nans_before > 0:
+        if fill_method == "interpolate":
+            try:
+                s = s.interpolate(method="time").ffill().bfill()
+            except Exception:
+                s = s.interpolate(method="linear").ffill().bfill()
+        elif fill_method == "ffill":
+            s = s.ffill().bfill()
+        elif fill_method == "bfill":
+            s = s.bfill().ffill()
+        elif fill_method == "drop":
+            s = s.dropna()
+        else:
+            raise ValueError(
+                f"Unknown fill method '{fill_method}'. Must be interpolate, ffill, bfill, or drop."
+            )
+
+        nans_after = int(s.isna().sum())
+        nans_filled = nans_before - nans_after
+
+    report = {
+        "duplicates_merged": int(duplicates_merged),
+        "rows_added": int(rows_added),
+        "nans_filled": int(nans_filled),
+        "freq_used": str(freq_used) if freq_used else "None (Irregular)",
+    }
+
+    return s, report
+
+
 def get_series_summary(ts: Union[pd.DataFrame, pd.Series]) -> dict:
     """
     Extract essential high-level metadata and statistics for the time series.
@@ -203,7 +354,7 @@ def get_series_summary(ts: Union[pd.DataFrame, pd.Series]) -> dict:
     if not isinstance(ts.index, pd.DatetimeIndex):
         raise ValueError("Provided object must have a pandas DatetimeIndex.")
 
-    inferred_freq = pd.infer_freq(ts.index) if len(ts.index) >= 3 else None
+    inferred_freq = ts.index.freqstr if ts.index.freqstr else pd.infer_freq(ts.index)
 
     return {
         "num_observations": len(ts),
