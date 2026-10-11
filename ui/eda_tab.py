@@ -472,7 +472,7 @@ def render_eda_tab() -> None:
                     st.rerun()
 
             with btn_col2:
-                if st.button("↺ Reset to Original Regularized Series", help="Restore active modeling series to original regularized data.", width="stretch"):
+                if st.button("🔄 Reset to Original Regularized Series", help="Restore active modeling series to original regularized data.", width="stretch"):
                     st.session_state["model_series"] = series
                     st.session_state["model_base_series"] = series
                     st.session_state["transform_info"] = {
@@ -483,7 +483,7 @@ def render_eda_tab() -> None:
                         "seasonal_period": None,
                     }
                     reset_model_widgets()
-                    st.toast("Reset active modeling series to original data.", icon="↺")
+                    st.toast("Reset active modeling series to original data.", icon="🔄")
                     st.rerun()
 
         except Exception as exc:
