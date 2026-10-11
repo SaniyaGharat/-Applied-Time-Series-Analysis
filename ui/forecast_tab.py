@@ -1,5 +1,5 @@
 """
-Forecast & Model Comparison UI Tab for ATSA (Phase 5).
+Forecast & Model Comparison UI Tab for Applied Time Series Analysis.
 
 Provides:
 - Section 1: Multi-model evaluation, styled comparison leaderboard, ranking by metric,

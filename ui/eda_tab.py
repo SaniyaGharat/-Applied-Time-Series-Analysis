@@ -1,5 +1,5 @@
 """
-EDA and Diagnostics UI Tab for ATSA.
+EDA and Diagnostics UI Tab for Applied Time Series Analysis.
 
 Provides comprehensive diagnostic inspections:
 - Tab 1: Stationarity testing (ADF, KPSS, joint verdict, rolling statistics).

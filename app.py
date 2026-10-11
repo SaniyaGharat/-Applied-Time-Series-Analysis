@@ -1,5 +1,5 @@
 """
-Applied Time Series Analysis (ATSA) - Main Application Entrypoint.
+Applied Time Series Analysis - Main Application Entrypoint.
 
 Coordinates routing across development phases:
 - 📥 Data: Ingestion, parsing, and regularization (Phase 1).
@@ -70,7 +70,7 @@ def init_session_state() -> None:
 def main() -> None:
     """Main application execution pipeline and tab router."""
     st.set_page_config(
-        page_title="Applied Time Series Analysis (ATSA)",
+        page_title="Applied Time Series Analysis",
         page_icon="📈",
         layout="wide",
         initial_sidebar_state="expanded",
@@ -79,7 +79,7 @@ def main() -> None:
     init_session_state()
     render_sidebar()
 
-    st.title("📈 Applied Time Series Analysis (ATSA)")
+    st.title("📈 Applied Time Series Analysis")
     st.caption("End-to-End Time Series Modeling & Diagnostic Platform")
 
     # Primary Tab Router

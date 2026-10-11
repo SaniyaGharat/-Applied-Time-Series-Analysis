@@ -1,5 +1,5 @@
 """
-Model Selector and Diagnostic UI Tab for ATSA (Phase 4).
+Model Selector and Diagnostic UI Tab for Applied Time Series Analysis.
 
 Provides interactive model fitting, per-model visualizations, residual diagnostics,
 parameter summaries, automated order grid search, and multi-model benchmarking across:

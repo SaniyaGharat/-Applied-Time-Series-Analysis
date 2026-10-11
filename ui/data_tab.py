@@ -1,5 +1,5 @@
 """
-Data Ingestion and Preprocessing UI Tab for ATSA.
+Data Ingestion and Preprocessing UI Tab for Applied Time Series Analysis.
 
 Handles:
 - Uploading CSV/Excel files and loading reproducible demo data.

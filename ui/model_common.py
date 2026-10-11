@@ -1,5 +1,5 @@
 """
-Shared Utilities, Model Caching, and Widget State Lifecycle for ATSA Model and Forecast Workspaces.
+Shared Utilities, Model Caching, and Widget State Lifecycle for Applied Time Series Analysis Model and Forecast Workspaces.
 
 Provides:
 - reset_model_widgets() for purging stale widget states
