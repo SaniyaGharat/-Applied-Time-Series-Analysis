@@ -36,7 +36,7 @@ def measure_fit_benchmarks():
 
     rss_pre_144 = proc.memory_info().rss / (1024 * 1024)
     t0 = time.perf_counter()
-    _ = fit_all_default_models(
+    results_144 = fit_all_default_models(
         s_air,
         holdout_size=12,
         m=12,
@@ -61,7 +61,7 @@ def measure_fit_benchmarks():
 
     rss_pre_1000 = proc.memory_info().rss / (1024 * 1024)
     t0 = time.perf_counter()
-    _ = fit_all_default_models(
+    results_1000 = fit_all_default_models(
         s_1000,
         holdout_size=30,
         m=7,
@@ -78,16 +78,38 @@ def measure_fit_benchmarks():
     t_1000 = time.perf_counter() - t0
     rss_post_1000 = proc.memory_info().rss / (1024 * 1024)
 
+    from modules.models import list_model_families
+    all_fams = [f["key"] for f in list_model_families()]
+
+    fitted_144_fams = [r.family for r in results_144]
+    skipped_144_fams = [f for f in all_fams if f not in fitted_144_fams]
+
+    fitted_1000_fams = [r.family for r in results_1000]
+    skipped_1000_fams = [f for f in all_fams if f not in fitted_1000_fams]
+
     print("=== Model Fitting Benchmarks ===")
     print(f"Base Process RSS: {rss_start:.2f} MB")
-    print(f"AirPassengers (144 rows) Fit Time: {t_144:.3f} s")
+    print("\n--- AirPassengers (144 rows, m=12, holdout=12) ---")
+    print(f"Actually Fit Families ({len(fitted_144_fams)}/{len(all_fams)}): {fitted_144_fams}")
+    print(f"Skipped Families ({len(skipped_144_fams)}/{len(all_fams)}): {skipped_144_fams} (sarimax skipped: no exogenous features)")
+    print("Individual Model Times:")
+    for r in results_144:
+        print(f"  - {r.label} ({r.family}): {r.fit_seconds:.3f} s (converged={r.converged})")
+    print(f"Total Fit Time (144 rows): {t_144:.3f} s")
     print(f"Peak RSS after AirPassengers fit: {rss_post_144:.2f} MB (Delta: {rss_post_144 - rss_pre_144:.2f} MB)")
-    print(f"Synthetic (1000 rows) Fit Time: {t_1000:.3f} s")
+
+    print("\n--- Synthetic Series (1000 rows, m=7, holdout=30) ---")
+    print(f"Actually Fit Families ({len(fitted_1000_fams)}/{len(all_fams)}): {fitted_1000_fams}")
+    print(f"Skipped Families ({len(skipped_1000_fams)}/{len(all_fams)}): {skipped_1000_fams} (sarimax skipped: no exogenous features)")
+    print("Individual Model Times:")
+    for r in results_1000:
+        print(f"  - {r.label} ({r.family}): {r.fit_seconds:.3f} s (converged={r.converged})")
+    print(f"Total Fit Time (1000 rows): {t_1000:.3f} s")
     print(f"Peak RSS after 1000 rows fit: {rss_post_1000:.2f} MB (Delta: {rss_post_1000 - rss_pre_1000:.2f} MB)")
     if t_1000 > 60.0:
-        print("WARNING: 1000-row fit exceeded 60 s! Grid search capping required.")
+        print("\nWARNING: 1000-row fit exceeded 60 s! Grid search capping required.")
     else:
-        print("PASS: 1000-row fit is well below the 60 s threshold.")
+        print("\nPASS: 1000-row fit is well below the 60 s threshold.")
 
 
 def measure_cold_start():

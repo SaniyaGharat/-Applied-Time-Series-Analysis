@@ -10,7 +10,7 @@ Before deploying, confirm that all local tests and configurations pass:
 - [x] Python dependencies pinned with `==` in `requirements.txt`.
 - [x] Test-only packages isolated in `requirements-dev.txt`.
 - [x] `.streamlit/config.toml` configured with `headless = true`, `gatherUsageStats = false`, `maxUploadSize = 20`, and light theme primary color `#2563eb`.
-- [x] Bundled datasets (`data/AirPassengers.csv` and `data/india_dataset_placeholder.csv`) committed.
+- [x] Bundled dataset (`data/AirPassengers.csv`) committed.
 - [x] All automated tests pass: `pytest -q --durations=5`.
 - [x] No bytecode syntax errors: `python -m compileall app.py modules ui`.
 
@@ -53,46 +53,50 @@ Before deploying, confirm that all local tests and configurations pass:
 Once the deployed app loads at its live URL, execute the following verification steps in sequence:
 
 ### 1. Ingestion & Bundled Data Load
-- [ ] In **1. Ingestion & Preprocessing**, locate the **"Sample datasets"** dropdown.
+- [ ] In tab **`📥 Data`**, locate the **"Sample datasets:"** selectbox.
 - [ ] Select **`AirPassengers (Monthly 1949-1960)`**.
 - [ ] Verify that:
-  - Active Dataset indicates **144 rows, 2 columns**.
+  - Active Dataset indicates **AirPassengers (Monthly 1949-1960)** (144 rows, 2 columns).
   - Date Column is automatically set to `Month`.
   - Target Column is automatically set to `Passengers`.
   - The Interactive Line Plot renders without errors.
 
 ### 2. Exploratory Data Analysis & Diagnostics
-- [ ] Click the **2. Exploratory Data Analysis & Diagnostics** tab.
+- [ ] Click the **`🔍 EDA & Diagnostics`** tab.
 - [ ] Verify:
   - ADF and KPSS statistical tests show p-values and a combined stationarity verdict banner.
   - Autocorrelation (ACF) and Partial Autocorrelation (PACF) plots render.
   - STL decomposition renders Trend, Seasonal, and Residual components.
 
-### 3. Model Zoo & "Fit All Models"
-- [ ] Click the **3. Model Selector & Evaluation** tab.
-- [ ] Click **"⚡ Fit All Default Models"**.
-- [ ] Verify progress bar completes across all 10 model architectures (Naive, Seasonal Naive, SES, Holt-Winters, AR, MA, ARMA, ARIMA, SARIMA, SARIMAX) without unhandled exceptions.
+### 3. Model Zoo & Model Estimation
+- [ ] Click the **`🧮 Models`** tab.
+- [ ] Choose a forecasting architecture pill (e.g. `AR` or `SARIMA`), adjust hyperparameters if desired, and click **"Update model"**.
+- [ ] Verify model summary card, in-sample fit vs actual plot, and residual diagnostic sub-tabs (Standardized Residuals, Residual ACF/PACF, Q-Q Plot & Histogram, Ljung-Box Test Table) render cleanly.
+- [ ] Alternatively, navigate to **`🔮 Forecast & Compare`** tab and click **"🚀 Fit all default models"** to estimate all candidate model families simultaneously across the holdout.
 
 ### 4. Comparison Leaderboard & DM Test
-- [ ] Click the **4. Forecast & Evaluation** tab.
-- [ ] Verify:
-  - The **Out-of-Sample Performance Comparison** table renders with models ranked by RMSE.
-  - A green **"🏆 Top Performer"** banner identifies Rank 1.
-  - The **Pairwise Diebold-Mariano Test** matrix renders with statistical significance coloring.
+- [ ] Click the **`🔮 Forecast & Compare`** tab.
+- [ ] Under Section 1 ("1. Holdout Model Comparison & Benchmarking"):
+  - Verify the styled leaderboard comparison table renders with models ranked by chosen metric (default RMSE).
+  - Verify green **"🏆 Top Performer"** banner identifies Rank 1.
+  - Switch sub-tabs to inspect **"📈 Forecast Overlay"**, **"📊 Metric Bars"**, **"🏛️ Information Criteria"**, **"📉 Error by Horizon"**, and **"🔬 Statistical Significance"** (Pairwise Diebold-Mariano Test).
+  - Check the **"📥 Download Comparison Table (CSV)"** button.
 
 ### 5. Multi-Step Forward Forecasting
-- [ ] Under **Forward Horizon Configuration**, set steps to `12`.
-- [ ] Click **"🔮 Generate Forward Forecast"**.
-- [ ] Verify:
-  - The Interactive Forward Forecast plot displays historical observations, test predictions, and future forecasts with shaded confidence intervals (80% and 95%).
-  - A table of point forecasts and bounds is displayed.
+- [ ] Under Section 2 ("2. Out-of-Sample Forward Forecast"):
+  - In **"Select Model for Future Projection:"**, pick the top performer or desired model.
+  - Set **"Forecast Horizon (Steps Ahead):"** (e.g. `12`).
+  - Click **"🔮 Generate forecast"**.
+  - Verify:
+    - Forward projection line plot renders historical data, holdout predictions, and future forecasts with shaded 95% confidence intervals.
+    - A table of point forecasts and 95% bounds is displayed.
 
-### 6. Excel Report Download
-- [ ] Click the **"📥 Download Comprehensive Forecast Report (.xlsx)"** button.
-- [ ] Verify the file downloads as `ATSA_Forecast_Report.xlsx`.
-- [ ] Open the spreadsheet and verify the existence of:
-  - `Summary`
-  - `Comparison Leaderboard`
-  - `Pairwise DM Tests`
-  - `Forecast Results`
-  - `Model Metadata`
+### 6. Excel & CSV Report Downloads
+- [ ] Click the **"📥 Download Future Forecast (CSV)"** button to export forecast numbers.
+- [ ] Click the **"📊 Download Comprehensive Report (Excel Workbook)"** button.
+- [ ] Verify the file downloads as `atsa_complete_forecast_report.xlsx`.
+- [ ] Open the spreadsheet and verify the existence of the 4 sheets generated by `modules/export.py`:
+  - `Comparison`: Leaderboard rankings and evaluation metrics across candidate models.
+  - `Holdout_Forecasts`: Validation holdout predictions (mean and intervals) across candidate models.
+  - `Future_Forecast`: Out-of-sample forward projections and 95% confidence bounds.
+  - `Specs`: Model JSON specifications, transform steps, holdout size, MASE scale, and run timestamp.

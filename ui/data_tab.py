@@ -38,12 +38,6 @@ SAMPLE_DATASETS = {
         "target_col": "Passengers",
         "display_name": "AirPassengers (Monthly 1949-1960)",
     },
-    "India Dataset (Placeholder)": {
-        "file": "india_dataset_placeholder.csv",
-        "date_col": "Date",
-        "target_col": "Value",
-        "display_name": "India Dataset (Placeholder)",
-    },
 }
 
 
@@ -304,10 +298,18 @@ def render_data_tab() -> None:
         if c not in [selected_date_col, selected_target_col]
     ]
 
+    if "exog_col_select" not in st.session_state:
+        st.session_state["exog_col_select"] = [
+            c for c in st.session_state.get("selected_exog_cols", []) if c in available_exog
+        ]
+    else:
+        st.session_state["exog_col_select"] = [
+            c for c in st.session_state["exog_col_select"] if c in available_exog
+        ]
+
     selected_exog_cols = st.multiselect(
         "Optional Exogenous Regressor Columns (for SARIMAX):",
         options=available_exog,
-        default=[c for c in st.session_state.get("selected_exog_cols", []) if c in available_exog],
         help="Select additional numeric driver columns to incorporate as external explanatory regressors.",
         key="exog_col_select",
     )

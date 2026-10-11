@@ -17,14 +17,25 @@ An end-to-end interactive Streamlit web application designed for applied time se
 ---
 
 ## ✨ Features
-- **Data Ingestion & Preprocessing**: File upload (CSV, XLSX, XLS), bundled sample datasets (AirPassengers, India Macro placeholder), synthetic demo data, duplicate aggregation, frequency alignment with automatic resample fallback, and missing data imputation.
-- **Exploratory Data Analysis (EDA) & Diagnostics**: Joint ADF/KPSS stationarity testing with automated verdict, classical & STL decomposition with Hyndman strength metrics, ACF/PACF with automatic order suggestions, seasonal distribution, and Box-Cox / differencing pipelines.
-- **Comprehensive Model Zoo (10 Architectures)**:
-  - Naive & Seasonal Naive benchmarks
-  - Simple Exponential Smoothing (SES) & Holt-Winters Exponential Smoothing (additive/multiplicative)
-  - Autoregressive (AR), Moving Average (MA), ARMA, ARIMA, SARIMA, and SARIMAX (with dynamic exogenous feature forecasting).
-- **Automated Leaderboard & Evaluation**: Out-of-sample metrics (RMSE, MAE, MAPE, MASE), relative RMSE vs benchmark, Diebold-Mariano pairwise predictive accuracy hypothesis testing, and equal-weight ensemble combination.
-- **Forward Forecasting & Export**: Future point forecasts with 80% & 95% confidence intervals, interactive Plotly visualizations, and multi-tab styled Excel report generation with formulas and model parameter sheets.
+- **Data Ingestion & Preprocessing (`📥 Data`)**: File upload (CSV, XLSX, XLS), bundled sample dataset (`AirPassengers`), synthetic demo data (`🧪 Load Demo Data`), duplicate aggregation, frequency alignment with automatic resample fallback, and missing data imputation.
+- **Exploratory Data Analysis (EDA) & Diagnostics (`🔍 EDA & Diagnostics`)**: Joint ADF/KPSS stationarity testing with automated verdict, classical & STL decomposition with Hyndman strength metrics, ACF/PACF with automatic order suggestions, seasonal distribution, and Box-Cox / differencing pipelines.
+- **Comprehensive Model Zoo (10 Architectures from `list_model_families()`) (`🧮 Models`)**:
+  1. `naive`: Naive Baseline
+  2. `seasonal_naive`: Seasonal Naive Baseline
+  3. `drift`: Random Walk with Drift
+  4. `ar`: Autoregressive AR(p)
+  5. `ma`: Moving Average MA(q)
+  6. `arma`: Autoregressive Moving Average ARMA(p, q)
+  7. `arima`: Autoregressive Integrated Moving Average ARIMA(p, d, q)
+  8. `sarima`: Seasonal ARIMA (SARIMA)
+  9. `sarimax`: SARIMAX with Exogenous Regressors
+  10. `holt_winters`: Holt-Winters Exponential Smoothing (additive / multiplicative / damped)
+- **Automated Leaderboard & Evaluation (`🔮 Forecast & Compare`)**: Out-of-sample metrics (RMSE, MAE, MAPE, sMAPE, MASE), relative RMSE vs benchmark, Diebold-Mariano pairwise predictive accuracy hypothesis testing, and equal-weight ensemble combination.
+- **Forward Forecasting & Export (`🔮 Forecast & Compare`)**: Multi-step forward point projections with 95% confidence intervals, multi-model overlay, and multi-sheet styled Excel workbook generation with sheets:
+  - `Comparison`: Leaderboard rankings and out-of-sample metrics
+  - `Holdout_Forecasts`: Holdout validation predictions and bounds
+  - `Future_Forecast`: Forward projection point forecasts and intervals
+  - `Specs`: Model JSON specifications, transforms, holdout size, and execution metadata
 
 ---
 
@@ -48,10 +59,10 @@ atsa/
 │   └── utils.py                # Helper utilities and type definitions
 ├── ui/
 │   ├── __init__.py
-│   ├── data_tab.py             # Tab 1: Dataset ingestion, sample selector, regularization
-│   ├── eda_tab.py              # Tab 2: Stationarity tests, decomposition, transforms
-│   ├── models_tab.py           # Tab 3: Model Zoo tuning, diagnostics, residual checks
-│   ├── forecast_tab.py         # Tab 4: Holdout comparison leaderboard, future forecasts, Excel export
+│   ├── data_tab.py             # 📥 Data: Dataset ingestion, sample selector (AirPassengers), regularization
+│   ├── eda_tab.py              # 🔍 EDA & Diagnostics: Stationarity tests, decomposition, transforms
+│   ├── models_tab.py           # 🧮 Models: Model zoo tuning, diagnostics, residual checks
+│   ├── forecast_tab.py         # 🔮 Forecast & Compare: Leaderboard, future forecasts, Excel export
 │   └── model_common.py         # Shared model fitting and session state coordination
 ├── scripts/
 │   └── measure_benchmarks.py   # Benchmark script for cold-start and RSS memory profiling
