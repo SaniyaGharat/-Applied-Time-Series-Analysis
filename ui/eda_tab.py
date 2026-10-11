@@ -359,20 +359,6 @@ def render_eda_tab() -> None:
             "($d, D$). In Phase 3, models receive the variance-stabilized **base series** and perform differencing internally."
         )
 
-        active_model_series = st.session_state.get("model_series", series)
-        active_transform_info = st.session_state.get("transform_info", {"steps": []})
-        steps_display = active_transform_info.get("steps")
-        steps_text = " -> ".join(steps_display) if steps_display else "None (Regularized Series)"
-
-        s_d = active_transform_info.get("suggested_d", 0)
-        s_D = active_transform_info.get("suggested_D", 0)
-        s_m = active_transform_info.get("seasonal_period")
-
-        st.info(
-            f"🎯 **Active Modeling Setup**: Pipeline: `{steps_text}` | "
-            f"**Models will difference internally using d={s_d} and D={s_D}**" + (f" (m={s_m})" if s_D > 0 else "")
-        )
-
         t_ctrl1, t_ctrl2, t_ctrl3, t_ctrl4 = st.columns(4)
 
         with t_ctrl1:

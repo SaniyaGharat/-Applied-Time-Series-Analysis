@@ -98,13 +98,6 @@ def render_models_tab() -> None:
         reset_model_widgets()
         st.session_state["_last_transform_suggestions"] = curr_suggestions
 
-    st.info(
-        f"🎯 **Active Modeling Pipeline**: `{steps_txt}` | "
-        f"Differencing orders for models: **d={suggested_d}, D={suggested_D}** (m={inferred_m})\n\n"
-        f"📌 *Note: Forecasts made through a log transform are MEDIAN forecasts on the original scale (a known bias), "
-        f"and MAPE is unreliable when the series crosses or is near zero.*"
-    )
-
     # 3. Global Estimation Controls (Holdout & Seasonal Period & MASE scale)
     ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([1.5, 1.5, 3])
     with ctrl_col1:

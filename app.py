@@ -33,11 +33,6 @@ def render_sidebar() -> None:
         """
     )
 
-    st.sidebar.markdown("---")
-    st.sidebar.info(
-        "💡 Select any tab above to begin exploring your time series workflow."
-    )
-
 
 def init_session_state() -> None:
     """Initialize necessary session state keys if not already present."""
