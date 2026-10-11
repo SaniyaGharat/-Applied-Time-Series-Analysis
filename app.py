@@ -17,28 +17,25 @@ from ui.models_tab import render_models_tab
 
 
 def render_sidebar() -> None:
-    """Render the sidebar navigation and development roadmap."""
+    """Render the sidebar navigation and application guide."""
     st.sidebar.title("📈 ATSA Suite")
     st.sidebar.caption("Applied Time Series Analysis")
 
     st.sidebar.markdown("---")
-    st.sidebar.subheader("Project Roadmap")
+    st.sidebar.subheader("🧭 Navigation Guide")
 
     st.sidebar.markdown(
         """
-        - **Phase 1 Data Ingestion** `[Active]`
-        - **Phase 2 EDA & Diagnostics (stationarity, ACF/PACF, decomposition)** `[Active]`
-        - **Phase 3 Model Zoo (AR, MA, ARMA, ARIMA, SARIMA, SARIMAX, Holt-Winters)** `[Active]`
-        - **Phase 4 Model Selector UI with per-model plots** `[Active]`
-        - **Phase 5 Forecast & Metrics Comparison** `[Active]`
-        - **Phase 6 Deployment** `[Upcoming]`
-        - **Phase 7 Polish** `[Upcoming]`
+        - **📥 Data**: Upload CSV/Excel or load sample datasets, regularize time frequency, and handle missing values.
+        - **🔍 EDA & Diagnostics**: Stationarity testing (ADF/KPSS), STL decomposition, autocorrelation (ACF/PACF), and variance transforms.
+        - **🧮 Models**: Interactive econometric model zoo (AR, MA, ARMA, ARIMA, SARIMA, SARIMAX, Holt-Winters) with residual diagnostics.
+        - **🔮 Forecast & Compare**: Holdout validation leaderboard, Diebold-Mariano tests, and multi-step future projections.
         """
     )
 
     st.sidebar.markdown("---")
     st.sidebar.info(
-        "💡 **Phases 1-5 Active**: Navigate between **📥 Data**, **🔍 EDA & Diagnostics**, **🧮 Models**, and **🔮 Forecast & Compare** using the tabs above."
+        "💡 Select any tab above to begin exploring your time series workflow."
     )
 
 
