@@ -23,6 +23,7 @@ import plotly.graph_objects as go
 
 from modules.plots import (
     plot_fit_vs_actual,
+    plot_forecast_overlay,
     plot_grid_results,
     plot_holdout_zoom,
     plot_hw_components,
@@ -161,6 +162,23 @@ def test_plot_grid_results_smoke():
     print("[PASS] plot_grid_results smoke tests passed.")
 
 
+def test_plot_forecast_overlay_smoke():
+    """Verify plot_forecast_overlay returns a valid go.Figure with non-overlapping bottom legend layout."""
+    dates = pd.date_range("2020-01-01", periods=12, freq="D")
+    actual = pd.Series(np.linspace(10, 50, 12), index=dates)
+    forecasts = {
+        "AR(1)": pd.DataFrame({"mean": np.linspace(12, 48, 12), "lower": np.linspace(8, 44, 12), "upper": np.linspace(16, 52, 12)}, index=dates),
+        "MA(1)": pd.DataFrame({"mean": np.linspace(11, 49, 12)}, index=dates),
+        "SARIMA": pd.DataFrame({"mean": np.linspace(10, 50, 12)}, index=dates),
+    }
+    fig = plot_forecast_overlay(actual, forecasts, show_bands_for="AR(1)")
+    assert isinstance(fig, go.Figure)
+    assert fig.layout.legend.orientation == "h"
+    assert fig.layout.legend.yanchor == "top"
+    assert fig.layout.legend.y < 0
+    print("[PASS] plot_forecast_overlay smoke tests passed.")
+
+
 if __name__ == "__main__":
     print("==================================================")
     print("Starting ATSA Plot Models Smoke Tests...")
@@ -171,6 +189,7 @@ if __name__ == "__main__":
     test_plot_theoretical_vs_empirical_smoke()
     test_plot_hw_components_smoke()
     test_plot_grid_results_smoke()
+    test_plot_forecast_overlay_smoke()
     print("\n==================================================")
     print("ALL TESTS IN TEST_PLOTS_MODELS COMPLETED SUCCESSFULLY!")
     print("==================================================")

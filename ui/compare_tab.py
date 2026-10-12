@@ -571,7 +571,12 @@ def render_compare_tab() -> None:
             if fc_dict:
                 fig = plot_forecast_overlay(actual=actual_holdout, forecasts=fc_dict)
                 suffix = "bj" if "Box-Jenkins" in mode else "top"
-                st.plotly_chart(fig, use_container_width=True, key=f"cmp_overlay_plot_{slot}_{suffix}")
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True,
+                    key=f"cmp_overlay_plot_{slot}_{suffix}",
+                    config={"displayModeBar": "hover", "displaylogo": False},
+                )
             else:
                 st.info("Holdout forecasts not available.")
         else:

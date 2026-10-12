@@ -1297,6 +1297,7 @@ def plot_forecast_overlay(
     forecasts: Dict[str, pd.DataFrame],
     tail: Optional[int] = None,
     show_bands_for: Optional[str] = None,
+    title: Optional[str] = "Model Forecasts vs Holdout Ground Truth",
 ) -> go.Figure:
     """
     Build overlay chart comparing ground-truth actuals against holdout forecasts from candidate models.
@@ -1368,13 +1369,30 @@ def plot_forecast_overlay(
             )
         )
 
+    title_text = title if title is not None else "Model Forecasts vs Holdout Ground Truth"
     fig.update_layout(
         template="plotly_white",
-        title="Model Forecasts vs Holdout Ground Truth",
+        title=dict(
+            text=title_text,
+            x=0.01,
+            y=0.98,
+            xanchor="left",
+            yanchor="top",
+            font=dict(size=13),
+        ) if title_text else None,
         xaxis_title="Date",
         yaxis_title="Value",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(l=40, r=40, t=60, b=40),
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.22,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+            bordercolor="rgba(0, 0, 0, 0.1)",
+            borderwidth=1,
+        ),
+        margin=dict(l=40, r=40, t=50 if title_text else 25, b=95),
     )
     return fig
 
@@ -2106,10 +2124,26 @@ def plot_arima_dual_overlay(
 
     fig.update_layout(
         template="plotly_white",
-        title="Box-Jenkins Holdout Trajectory Comparison (AR, MA, ARMA, ARIMA, SARIMA)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.04, xanchor="right", x=1),
-        margin=dict(l=40, r=40, t=70, b=40),
-        height=700,
+        title=dict(
+            text="Box-Jenkins Holdout Trajectory Comparison (AR, MA, ARMA, ARIMA, SARIMA)",
+            x=0.01,
+            y=0.98,
+            xanchor="left",
+            yanchor="top",
+            font=dict(size=14),
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.10,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+            bordercolor="rgba(0, 0, 0, 0.1)",
+            borderwidth=1,
+        ),
+        margin=dict(l=40, r=40, t=55, b=85),
+        height=720,
     )
     return fig
 
