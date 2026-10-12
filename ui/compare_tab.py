@@ -27,9 +27,11 @@ from modules.data_loader import (
     prepare_time_series,
     regularize_series,
 )
-from modules.pipeline import AnalysisBundle, run_analysis
+from modules.diagnostics import decompose
+from modules.pipeline import AnalysisBundle, build_arima_family_comparison, run_analysis
 from modules.plots import (
     plot_acf_pacf_combined,
+    plot_arima_family_bars,
     plot_decomposition,
     plot_forecast_overlay,
     plot_future_forecast,
@@ -440,62 +442,131 @@ def render_compare_tab() -> None:
     )
 
     # =========================================================================
-    # SECTION 5: Model Leaderboards (MASE Ranking)
+    # SECTION 5: Model Leaderboards & Box-Jenkins Comparison
     # =========================================================================
-    def _render_leaderboard(bundle: AnalysisBundle):
-        st.success(f"🏆 **Top Performer**: **{bundle.best_label}** (RelRMSE: {bundle.rel_rmse_best:.3f})")
-        if not bundle.comparison.empty:
-            display_cols = [c for c in ["Rank", "Model", "Family", "Converged", "MASE", "sMAPE", "RelRMSE_vs_ref", "Coverage95", "AIC", "FitSec"] if c in bundle.comparison.columns]
-            st.dataframe(bundle.comparison[display_cols], use_container_width=True)
-        else:
-            st.info("No models estimated.")
+    st.markdown("### 5. Out-of-Sample Holdout Leaderboard & Box-Jenkins Zoo")
+    with st.expander("ℹ️ What does this show?"):
+        st.markdown(
+            "Ranks candidate models on out-of-sample holdout validation using MASE (Mean Absolute Scaled Error). "
+            "A MASE < 1 indicates the model achieves higher accuracy than the naive baseline. "
+            "Switch between the full model zoo and the dedicated **Box-Jenkins Comparison** to evaluate "
+            "classical AR, MA, ARMA, ARIMA, and SARIMA architectures head-to-head."
+        )
 
-    render_dual_section(
-        "5. Out-of-Sample Holdout Leaderboard",
-        "Ranks estimated candidate models on out-of-sample holdout validation using MASE (Mean Absolute Scaled Error). "
-        "A MASE < 1 indicates the model achieves higher accuracy than the naive baseline.",
-        lambda: _render_leaderboard(b_a),
-        lambda: _render_leaderboard(b_b),
+    sec5_view = st.radio(
+        "Leaderboard Perspective:",
+        ["🎯 Box-Jenkins Comparison (AR, MA, ARMA, ARIMA, SARIMA)", "📋 Full Model Zoo Leaderboard"],
+        horizontal=True,
+        key="cmp_sec5_view_mode",
     )
 
-    # =========================================================================
-    # SECTION 6: Holdout Forecast Overlay (Best 3 Models)
-    # =========================================================================
-    def _render_holdout_overlay(bundle: AnalysisBundle, slot: str):
-        # Pick top 3 converged models
-        top_models: List[Any] = []
-        if not bundle.comparison.empty:
-            for _, r in bundle.comparison.iterrows():
-                if r.get("Converged"):
-                    for m_res in bundle.model_results:
-                        if m_res.label == r.get("Model"):
-                            top_models.append(m_res)
-                            break
-                if len(top_models) >= 3:
-                    break
+    if sec5_view == "🎯 Box-Jenkins Comparison (AR, MA, ARMA, ARIMA, SARIMA)":
+        st.markdown("##### 🏛️ Classical Box-Jenkins Architecture Matrix (AR, MA, ARMA, ARIMA, SARIMA)")
+        bj_df = build_arima_family_comparison(b_a, b_b)
+        st.dataframe(bj_df, use_container_width=True)
 
-        if top_models and len(bundle.series) > bundle.holdout:
+        metric_choice = st.radio(
+            "Comparative Metric for Box-Jenkins Chart:",
+            ["MASE (Holdout Error)", "sMAPE (%)", "AIC (Information Criterion)"],
+            horizontal=True,
+            key="cmp_bj_metric_choice",
+        )
+        metric_key = "MASE" if "MASE" in metric_choice else ("sMAPE" if "sMAPE" in metric_choice else "AIC")
+        fig_bj_bars = plot_arima_family_bars(b_a, b_b, metric=metric_key, names=(b_a.name, b_b.name))
+        st.plotly_chart(fig_bj_bars, use_container_width=True, key="cmp_bj_bars_plot")
+        st.markdown("---")
+    else:
+        def _render_leaderboard(bundle: AnalysisBundle):
+            st.success(f"🏆 **Top Performer**: **{bundle.best_label}** (RelRMSE: {bundle.rel_rmse_best:.3f})")
+            if not bundle.comparison.empty:
+                display_cols = [c for c in ["Rank", "Model", "Family", "Converged", "MASE", "sMAPE", "RelRMSE_vs_ref", "Coverage95", "AIC", "FitSec"] if c in bundle.comparison.columns]
+                st.dataframe(bundle.comparison[display_cols], use_container_width=True)
+            else:
+                st.info("No models estimated.")
+
+        if is_stacked:
+            st.markdown(f"##### 🔹 Dataset A: `{b_a.name}`")
+            _render_leaderboard(b_a)
+            st.markdown("---")
+            st.markdown(f"##### 🔸 Dataset B: `{b_b.name}`")
+            _render_leaderboard(b_b)
+        else:
+            c_left, c_right = st.columns(2)
+            with c_left:
+                st.markdown(f"##### 🔹 Dataset A: `{b_a.name}`")
+                _render_leaderboard(b_a)
+            with c_right:
+                st.markdown(f"##### 🔸 Dataset B: `{b_b.name}`")
+                _render_leaderboard(b_b)
+        st.markdown("---")
+
+    # =========================================================================
+    # SECTION 6: Holdout Forecast Overlay (Top Candidates & Box-Jenkins Zoo)
+    # =========================================================================
+    st.markdown("### 6. Holdout Forecast Overlay")
+    with st.expander("ℹ️ What does this show?"):
+        st.markdown(
+            "Overlays model predictions directly against actual held-out observations. "
+            "Highlights how accurately each architecture tracks local directional turning points and peaks. "
+            "Select **Box-Jenkins Models** to visually compare AR, MA, ARMA, ARIMA, and SARIMA predictions."
+        )
+
+    overlay_view = st.radio(
+        "Forecast Overlay Selection:",
+        ["🎯 Box-Jenkins Models (AR, MA, ARMA, ARIMA, SARIMA)", "🏆 Top 3 Candidate Models Overall"],
+        horizontal=True,
+        key="cmp_sec6_overlay_view",
+    )
+
+    def _render_holdout_overlay(bundle: AnalysisBundle, slot: str, mode: str):
+        selected_models: List[Any] = []
+        if mode == "🎯 Box-Jenkins Models (AR, MA, ARMA, ARIMA, SARIMA)":
+            bj_fams = {"ar", "ma", "arma", "arima", "sarima"}
+            for m_res in bundle.model_results:
+                if m_res.family in bj_fams and getattr(m_res, "test_forecast", None) is not None and not m_res.test_forecast.empty:
+                    selected_models.append(m_res)
+        else:
+            if not bundle.comparison.empty:
+                for _, r in bundle.comparison.iterrows():
+                    if r.get("Converged"):
+                        for m_res in bundle.model_results:
+                            if m_res.label == r.get("Model"):
+                                selected_models.append(m_res)
+                                break
+                    if len(selected_models) >= 3:
+                        break
+
+        if selected_models and len(bundle.series) > bundle.holdout:
             actual_holdout = bundle.series.iloc[-bundle.holdout:]
             fc_dict = {
                 r.label: r.test_forecast
-                for r in top_models
+                for r in selected_models
                 if getattr(r, "test_forecast", None) is not None and not r.test_forecast.empty
             }
             if fc_dict:
                 fig = plot_forecast_overlay(actual=actual_holdout, forecasts=fc_dict)
-                st.plotly_chart(fig, use_container_width=True, key=f"cmp_overlay_plot_{slot}")
+                suffix = "bj" if "Box-Jenkins" in mode else "top"
+                st.plotly_chart(fig, use_container_width=True, key=f"cmp_overlay_plot_{slot}_{suffix}")
             else:
                 st.info("Holdout forecasts not available.")
         else:
             st.info("Holdout overlay not available.")
 
-    render_dual_section(
-        "6. Holdout Forecast Overlay (Top 3 Candidate Models)",
-        "Overlays predictions from the top 3 candidate models directly against actual held-out observations. "
-        "Highlights how accurately each architecture tracks local directional turning points and peaks.",
-        lambda: _render_holdout_overlay(b_a, "a"),
-        lambda: _render_holdout_overlay(b_b, "b"),
-    )
+    if is_stacked:
+        st.markdown(f"##### 🔹 Dataset A: `{b_a.name}`")
+        _render_holdout_overlay(b_a, "a", overlay_view)
+        st.markdown("---")
+        st.markdown(f"##### 🔸 Dataset B: `{b_b.name}`")
+        _render_holdout_overlay(b_b, "b", overlay_view)
+    else:
+        c_left, c_right = st.columns(2)
+        with c_left:
+            st.markdown(f"##### 🔹 Dataset A: `{b_a.name}`")
+            _render_holdout_overlay(b_a, "a", overlay_view)
+        with c_right:
+            st.markdown(f"##### 🔸 Dataset B: `{b_b.name}`")
+            _render_holdout_overlay(b_b, "b", overlay_view)
+    st.markdown("---")
 
     # =========================================================================
     # SECTION 7: Future Forward Projections

@@ -610,4 +610,87 @@ def compare_datasets(
             f"**Temporal Co-movement**: First-difference correlation over {overlap_count} overlapping periods is r = {diff_corr:.3f} (descriptive co-movement only; not causal)."
         )
 
+    # 4. Box-Jenkins / ARIMA Zoo Comparison Finding
+    if isinstance(kpis_a, AnalysisBundle) and isinstance(kpis_b, AnalysisBundle):
+        bj_families = {"ar", "ma", "arma", "arima", "sarima"}
+        bj_a = [r for r in kpis_a.model_results if r.family in bj_families and r.metrics_test.get("mase") is not None and not np.isnan(r.metrics_test.get("mase"))]
+        bj_b = [r for r in kpis_b.model_results if r.family in bj_families and r.metrics_test.get("mase") is not None and not np.isnan(r.metrics_test.get("mase"))]
+        if bj_a and bj_b:
+            best_bj_a = min(bj_a, key=lambda x: x.metrics_test.get("mase", float("inf")))
+            best_bj_b = min(bj_b, key=lambda x: x.metrics_test.get("mase", float("inf")))
+            findings.append(
+                f"**Box-Jenkins Zoo (AR, MA, ARMA, ARIMA, SARIMA)**: Among classical Box-Jenkins architectures, "
+                f"**{best_bj_a.label}** performed best on {name_a} (MASE: {best_bj_a.metrics_test['mase']:.3f}), "
+                f"while **{best_bj_b.label}** was optimal on {name_b} (MASE: {best_bj_b.metrics_test['mase']:.3f})."
+            )
+
     return kpi_df, findings
+
+
+def build_arima_family_comparison(
+    bundle_a: AnalysisBundle,
+    bundle_b: AnalysisBundle,
+) -> pd.DataFrame:
+    """
+    Build structured side-by-side comparison specifically for Box-Jenkins / ARIMA models:
+    AR, MA, ARMA, ARIMA, and SARIMA.
+
+    Returns DataFrame with columns:
+    [
+        'Family',
+        'Model A', 'Converged A', 'MASE A', 'sMAPE A (%)', 'AIC A',
+        'Model B', 'Converged B', 'MASE B', 'sMAPE B (%)', 'AIC B',
+        'Top Performer', 'Insights'
+    ]
+    """
+    families = [
+        ("ar", "AR (Autoregressive)", "Linear autoregression on p lags"),
+        ("ma", "MA (Moving Average)", "Invertible moving average on q error shocks"),
+        ("arma", "ARMA (Autoregressive Moving Average)", "Mixed stationary AR(p) + MA(q) process"),
+        ("arima", "ARIMA (Integrated ARMA)", "ARMA on d-differenced non-stationary series"),
+        ("sarima", "SARIMA (Seasonal ARIMA)", "Multiplicative seasonal (P, D, Q)_s structure"),
+    ]
+
+    map_a = {r.family: r for r in bundle_a.model_results}
+    map_b = {r.family: r for r in bundle_b.model_results}
+
+    rows = []
+    for fam_key, fam_title, role_desc in families:
+        r_a = map_a.get(fam_key)
+        r_b = map_b.get(fam_key)
+
+        mase_a = r_a.metrics_test.get("mase") if r_a and r_a.metrics_test else np.nan
+        mase_b = r_b.metrics_test.get("mase") if r_b and r_b.metrics_test else np.nan
+        smape_a = r_a.metrics_test.get("smape") if r_a and r_a.metrics_test else np.nan
+        smape_b = r_b.metrics_test.get("smape") if r_b and r_b.metrics_test else np.nan
+
+        ic_a = (r_a.information_criteria or {}).get("aic") if r_a else None
+        ic_b = (r_b.information_criteria or {}).get("aic") if r_b else None
+
+        if not np.isnan(mase_a) and not np.isnan(mase_b):
+            winner = bundle_a.name if mase_a < mase_b else bundle_b.name
+        elif not np.isnan(mase_a):
+            winner = bundle_a.name
+        elif not np.isnan(mase_b):
+            winner = bundle_b.name
+        else:
+            winner = "N/A"
+
+        rows.append({
+            "Family": fam_title,
+            f"{bundle_a.name} Model": r_a.label if r_a else "Not Fitted",
+            f"{bundle_a.name} Converged": "✅ Yes" if (r_a and r_a.converged) else ("❌ No" if r_a else "N/A"),
+            f"{bundle_a.name} MASE": round(mase_a, 3) if not np.isnan(mase_a) else "N/A",
+            f"{bundle_a.name} sMAPE (%)": f"{smape_a:.2f}%" if not np.isnan(smape_a) else "N/A",
+            f"{bundle_a.name} AIC": f"{ic_a:.1f}" if ic_a is not None and not np.isnan(ic_a) else "N/A",
+            f"{bundle_b.name} Model": r_b.label if r_b else "Not Fitted",
+            f"{bundle_b.name} Converged": "✅ Yes" if (r_b and r_b.converged) else ("❌ No" if r_b else "N/A"),
+            f"{bundle_b.name} MASE": round(mase_b, 3) if not np.isnan(mase_b) else "N/A",
+            f"{bundle_b.name} sMAPE (%)": f"{smape_b:.2f}%" if not np.isnan(smape_b) else "N/A",
+            f"{bundle_b.name} AIC": f"{ic_b:.1f}" if ic_b is not None and not np.isnan(ic_b) else "N/A",
+            "Top Performer (Lower MASE)": winner,
+            "Insights": role_desc,
+        })
+
+    return pd.DataFrame(rows)
+

@@ -1843,4 +1843,99 @@ def plot_gauge_or_bar(
     return fig
 
 
+def plot_arima_family_bars(
+    bundle_a,
+    bundle_b,
+    metric: str = "MASE",
+    names: Tuple[str, str] = ("Dataset A", "Dataset B"),
+) -> go.Figure:
+    """
+    Build comparative grouped bars for Box-Jenkins ARIMA family models:
+    AR, MA, ARMA, ARIMA, and SARIMA.
+    """
+    families = [
+        ("ar", "AR"),
+        ("ma", "MA"),
+        ("arma", "ARMA"),
+        ("arima", "ARIMA"),
+        ("sarima", "SARIMA"),
+    ]
+    categories = [label for _, label in families]
+
+    map_a = {r.family: r for r in getattr(bundle_a, "model_results", [])}
+    map_b = {r.family: r for r in getattr(bundle_b, "model_results", [])}
+
+    def _extract_val(res, met):
+        if not res:
+            return None
+        met_lower = met.lower()
+        if met_lower in ("mase", "smape", "rmse", "mae"):
+            v = res.metrics_test.get(met_lower)
+            return float(v) if (v is not None and not np.isnan(v)) else None
+        elif met_lower in ("aic", "bic"):
+            v = (res.information_criteria or {}).get(met_lower)
+            return float(v) if (v is not None and not np.isnan(v)) else None
+        return None
+
+    def _format_text(val, met):
+        if val is None:
+            return "N/A"
+        met_lower = met.lower()
+        if met_lower == "mase":
+            return f"{val:.3f}"
+        elif met_lower == "smape":
+            return f"{val:.1f}%"
+        else:
+            return f"{val:.1f}"
+
+    vals_a = [_extract_val(map_a.get(fam_key), metric) for fam_key, _ in families]
+    vals_b = [_extract_val(map_b.get(fam_key), metric) for fam_key, _ in families]
+
+    text_a = [_format_text(v, metric) for v in vals_a]
+    text_b = [_format_text(v, metric) for v in vals_b]
+
+    plot_y_a = [v if v is not None else 0 for v in vals_a]
+    plot_y_b = [v if v is not None else 0 for v in vals_b]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=categories,
+            y=plot_y_a,
+            name=names[0],
+            marker_color="#2563eb",
+            text=text_a,
+            textposition="auto",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=categories,
+            y=plot_y_b,
+            name=names[1],
+            marker_color="#10b981",
+            text=text_b,
+            textposition="auto",
+        )
+    )
+
+    metric_label = metric.upper()
+    if metric_label == "SMAPE":
+        metric_label = "sMAPE (%)"
+    elif metric_label == "MASE":
+        metric_label = "MASE (Holdout)"
+
+    fig.update_layout(
+        template="plotly_white",
+        title=f"Box-Jenkins Model Family Comparison ({metric_label})",
+        barmode="group",
+        xaxis=dict(title="Box-Jenkins Architecture"),
+        yaxis=dict(title=metric_label),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig
+
+
+
 

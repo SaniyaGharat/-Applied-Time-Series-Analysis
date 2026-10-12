@@ -10,7 +10,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from modules.pipeline import AnalysisBundle, compare_datasets, compute_kpis, run_analysis
+from modules.pipeline import (
+    AnalysisBundle,
+    build_arima_family_comparison,
+    compare_datasets,
+    compute_kpis,
+    run_analysis,
+)
+from modules.plots import plot_arima_family_bars
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
@@ -191,3 +198,56 @@ def test_overlapping_date_correlation_threshold():
     df_10, findings_10 = compare_datasets(k3, k4, series_a=s3, series_b=s4)
     has_corr_10 = any("Correlation" in str(k) for k in df_10["KPI"].values)
     assert not has_corr_10, "First-difference correlation must NOT be present when overlap < 24"
+
+
+def test_build_arima_family_comparison_and_plots():
+    """Verify build_arima_family_comparison and plot_arima_family_bars structure, families, and chart traces."""
+    air_csv = DATA_DIR / "AirPassengers.csv"
+    df_air = pd.read_csv(air_csv)
+    s_air = pd.Series(df_air["Passengers"].values, index=pd.to_datetime(df_air["Month"]), name="AirPassengers")
+
+    rng = np.random.default_rng(123)
+    dates_b = pd.date_range("1950-01-01", periods=100, freq="MS")
+    vals_b = 200.0 + np.cumsum(rng.normal(0, 2, 100)) + 10.0 * np.sin(2 * np.pi * np.arange(100) / 12)
+    s_b = pd.Series(vals_b, index=dates_b, name="SyntheticMonthly")
+
+    bundle_a = run_analysis(s_air, "AirPassengers", m=12, holdout=12)
+    bundle_b = run_analysis(s_b, "SyntheticMonthly", m=12, holdout=12)
+
+    bj_df = build_arima_family_comparison(bundle_a, bundle_b)
+    assert isinstance(bj_df, pd.DataFrame)
+    assert len(bj_df) == 5
+
+    expected_cols = [
+        "Family",
+        f"{bundle_a.name} Model",
+        f"{bundle_a.name} Converged",
+        f"{bundle_a.name} MASE",
+        f"{bundle_a.name} sMAPE (%)",
+        f"{bundle_a.name} AIC",
+        f"{bundle_b.name} Model",
+        f"{bundle_b.name} Converged",
+        f"{bundle_b.name} MASE",
+        f"{bundle_b.name} sMAPE (%)",
+        f"{bundle_b.name} AIC",
+        "Top Performer (Lower MASE)",
+        "Insights",
+    ]
+    for col in expected_cols:
+        assert col in bj_df.columns, f"Expected column '{col}' missing from Box-Jenkins comparison table"
+
+    families_in_table = bj_df["Family"].tolist()
+    assert any("AR (" in fam for fam in families_in_table)
+    assert any("MA (" in fam for fam in families_in_table)
+    assert any("ARMA (" in fam for fam in families_in_table)
+    assert any("ARIMA (" in fam for fam in families_in_table)
+    assert any("SARIMA (" in fam for fam in families_in_table)
+
+    # Test plot generation for each metric
+    for metric in ["MASE", "sMAPE", "AIC"]:
+        fig = plot_arima_family_bars(bundle_a, bundle_b, metric=metric, names=(bundle_a.name, bundle_b.name))
+        assert fig is not None
+        assert len(fig.data) == 2  # Two series traces (A and B)
+        assert len(fig.data[0].x) == 5  # 5 Box-Jenkins architectures
+        assert list(fig.data[0].x) == ["AR", "MA", "ARMA", "ARIMA", "SARIMA"]
+
