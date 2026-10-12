@@ -524,6 +524,77 @@ def test_upload_5mb_file_apptest():
     assert len(at.session_state["raw_df"]) == n_rows
 
 
+def test_compare_tab_and_dashboard_apptest():
+    """Phase 8: Select sources in Compare tab, click Run comparison, verify no exception, bundles, metrics >= 20, and findings."""
+    print("\n--- Testing Phase 8: Compare Tab & Dashboard AppTest ---")
+    at = AppTest.from_file("app.py", default_timeout=45).run()
+    assert not at.exception
+    assert len(at.error) == 0
+
+    # Select sources for Slot A and Slot B
+    source_a_sb = at.selectbox(key="cmpA_source_select")
+    assert source_a_sb is not None, "cmpA_source_select widget not found"
+    source_a_sb.select("Demo Monthly Sales (Synthetic)")
+
+    source_b_sb = at.selectbox(key="cmpB_source_select")
+    assert source_b_sb is not None, "cmpB_source_select widget not found"
+    source_b_sb.select("AirPassengers (Monthly 1949-1960)").run()
+
+    assert not at.exception
+    assert len(at.error) == 0
+
+    # Locate and click 'Run Comparison' button
+    run_buttons = [b for b in at.button if "Run Comparison" in b.label]
+    assert len(run_buttons) > 0, "'Run Comparison' button not found in Compare tab"
+    run_buttons[0].click().run()
+
+    # Assertions
+    assert not at.exception, f"App crashed with exception on Run Comparison: {at.exception}"
+    assert len(at.error) == 0, f"Unexpected errors on Run Comparison: {[e.value for e in at.error]}"
+
+    # Verify session state cmp_bundles
+    assert "cmp_bundles" in at.session_state, "cmp_bundles not found in session_state"
+    cmp_bundles = at.session_state["cmp_bundles"]
+    assert cmp_bundles is not None, "cmp_bundles is None in session_state"
+    assert "A" in cmp_bundles and "B" in cmp_bundles, "cmp_bundles must contain keys 'A' and 'B'"
+    assert cmp_bundles["A"].n_obs == 48
+    assert cmp_bundles["B"].n_obs == 144
+
+    # Verify Dashboard renders KPI metrics (len(at.metric) >= 20)
+    metrics_count = len(at.metric)
+    print(f"Total st.metric widgets rendered across tabs: {metrics_count}")
+    assert metrics_count >= 20, f"Expected at least 20 st.metric widgets, found {metrics_count}"
+
+    # Verify findings box rendered
+    info_boxes = [inf.value for inf in at.info]
+    findings_rendered = any("Econometric Synthesis" in val or "Seasonality" in val for val in info_boxes)
+    assert findings_rendered, f"Findings box not rendered in info boxes: {info_boxes}"
+    print("[PASS] Phase 8 Compare Tab & Dashboard AppTest passed successfully!")
+
+
+def test_compare_tab_invalid_slot_b_shows_error_apptest():
+    """Phase 8: Invalid dataset in slot B displays friendly st.error without raising an exception."""
+    print("\n--- Testing Phase 8: Invalid Slot B Friendly st.error AppTest ---")
+    at = AppTest.from_file("app.py", default_timeout=30).run()
+    assert not at.exception
+
+    # Set Slot A valid demo, but Slot B to Upload with no uploaded file
+    at.selectbox(key="cmpA_source_select").select("Demo Monthly Sales (Synthetic)")
+    at.selectbox(key="cmpB_source_select").select("Upload CSV/XLSX").run()
+    assert not at.exception
+
+    # Click Run Comparison
+    run_buttons = [b for b in at.button if "Run Comparison" in b.label]
+    assert len(run_buttons) > 0
+    run_buttons[0].click().run()
+
+    # Must display st.error and never crash with unhandled exception
+    assert not at.exception, f"App threw unhandled exception on invalid slot B: {at.exception}"
+    assert len(at.error) > 0, "Expected st.error when slot B is invalid/missing"
+    assert any("dataset b" in err.value.lower() or "slot b" in err.value.lower() for err in at.error)
+    print(f"[PASS] Friendly st.error displayed on invalid slot B: {[e.value for e in at.error]}")
+
+
 if __name__ == "__main__":
     print("==================================================")
     print("Starting ATSA Smoke & AppTest Suites...")
@@ -542,6 +613,8 @@ if __name__ == "__main__":
     test_upload_all_nan_target_apptest()
     test_bundled_sample_dataset_loading_apptest()
     test_upload_5mb_file_apptest()
+    test_compare_tab_and_dashboard_apptest()
+    test_compare_tab_invalid_slot_b_shows_error_apptest()
     print("\n==================================================")
     print("ALL TESTS IN TEST_APP_SMOKE COMPLETED SUCCESSFULLY!")
     print("==================================================")

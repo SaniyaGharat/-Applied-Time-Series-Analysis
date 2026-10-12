@@ -79,6 +79,10 @@ def render_eda_tab() -> None:
     st.markdown("### 🔍 Exploratory Data Analysis & Diagnostics")
     st.caption(f"Analyzing `{series.name or 'Target Series'}` ({len(series)} observations)")
 
+    if len(series) > 5000:
+        st.info("ℹ️ Dataset has > 5,000 observations. EDA diagnostics and plots are computed on the most recent 5,000 observations for optimal responsiveness.")
+        series = series.iloc[-5000:]
+
     eda_t1, eda_t2, eda_t3, eda_t4, eda_t5 = st.tabs(
         [
             "⚡ Stationarity",

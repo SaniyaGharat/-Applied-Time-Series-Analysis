@@ -10,6 +10,8 @@ Coordinates routing across development phases:
 
 import streamlit as st
 
+from ui.compare_tab import render_compare_tab
+from ui.dashboard_tab import render_dashboard_tab
 from ui.data_tab import render_data_tab
 from ui.eda_tab import render_eda_tab
 from ui.forecast_tab import render_forecast_tab
@@ -30,8 +32,12 @@ def render_sidebar() -> None:
         - **🔍 EDA & Diagnostics**: Stationarity testing (ADF/KPSS), STL decomposition, autocorrelation (ACF/PACF), and variance transforms.
         - **🧮 Models**: Interactive econometric model zoo (AR, MA, ARMA, ARIMA, SARIMA, SARIMAX, Holt-Winters) with residual diagnostics.
         - **🔮 Forecast & Compare**: Holdout validation leaderboard, Diebold-Mariano tests, and multi-step future projections.
+        - **⚖️ Compare Datasets**: Simultaneous side-by-side or stacked multi-facet analysis of two time series datasets.
+        - **📊 Dashboard**: Final comparative executive dashboard with cross-dataset KPI cards, findings, and Excel/CSV exports.
         """
     )
+    st.sidebar.markdown("---")
+    st.sidebar.caption("🚀 **Phase 8 Active**: Two-Dataset Comparison & KPI Dashboard")
 
 
 def init_session_state() -> None:
@@ -61,6 +67,7 @@ def init_session_state() -> None:
         "pending_spec": None,
         "selected_model_family": None,
         "uploader_key": 0,
+        "cmp_bundles": None,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -83,8 +90,22 @@ def main() -> None:
     st.caption("End-to-End Time Series Modeling & Diagnostic Platform")
 
     # Primary Tab Router
-    tab_data, tab_eda, tab_models, tab_forecast = st.tabs(
-        ["📥 Data", "🔍 EDA & Diagnostics", "🧮 Models", "🔮 Forecast & Compare"]
+    (
+        tab_data,
+        tab_eda,
+        tab_models,
+        tab_forecast,
+        tab_compare,
+        tab_dashboard,
+    ) = st.tabs(
+        [
+            "📥 Data",
+            "🔍 EDA & Diagnostics",
+            "🧮 Models",
+            "🔮 Forecast & Compare",
+            "⚖️ Compare Datasets",
+            "📊 Dashboard",
+        ]
     )
 
     with tab_data:
@@ -98,6 +119,12 @@ def main() -> None:
 
     with tab_forecast:
         render_forecast_tab()
+
+    with tab_compare:
+        render_compare_tab()
+
+    with tab_dashboard:
+        render_dashboard_tab()
 
 
 if __name__ == "__main__":

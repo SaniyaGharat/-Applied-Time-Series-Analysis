@@ -100,3 +100,38 @@ Once the deployed app loads at its live URL, execute the following verification 
   - `Holdout_Forecasts`: Validation holdout predictions (mean and intervals) across candidate models.
   - `Future_Forecast`: Out-of-sample forward projections and 95% confidence bounds.
   - `Specs`: Model JSON specifications, transform steps, holdout size, MASE scale, and run timestamp.
+
+### 7. Two-Dataset Comparative Analysis (`⚖️ Compare Datasets`)
+- [ ] Click the **`⚖️ Compare Datasets`** tab.
+- [ ] Configure Slot A: Select **"Demo Monthly Sales (Synthetic)"**.
+- [ ] Configure Slot B: Select **"AirPassengers (Monthly 1949-1960)"**.
+- [ ] Click **"🚀 Run Comparison"**.
+- [ ] Verify:
+  - Both datasets execute the automated analytical pipeline with zero unhandled exceptions.
+  - View layout toggle between **"Stacked (A above B)"** and **"Side by side"** functions smoothly.
+  - All 7 sections render for Dataset A and Dataset B:
+    1. Series line plots, descriptive summary stats, and indexed growth overlay (Base=100).
+    2. ADF and KPSS hypothesis tests with stationarity verdict banners and suggested $d$.
+    3. Differenced ACF and PACF autocorrelation charts with confidence bands.
+    4. Time series decomposition with Hyndman seasonal and trend strength metric badges.
+    5. Candidate model out-of-sample leaderboards ranked by MASE with Top Performer callouts.
+    6. Holdout validation forecast overlay comparing top 3 candidate models against ground truth.
+    7. Out-of-sample forward projections with 95% confidence bands.
+  - Plain-English informational expanders ("ℹ️ What does this show?") render in each section.
+  - Cross-dataset evaluation notice is visible: raw RMSE and MAE cannot be ranked across different series units.
+
+### 8. Executive Comparative Dashboard (`📊 Dashboard`)
+- [ ] Click the **`📊 Dashboard`** tab.
+- [ ] Verify:
+  - Top header displays dataset names and date span chips.
+  - Dual rows of KPI cards render 11 scale-free metrics for Dataset A and Dataset B (22 total metrics).
+  - Econometric synthesis callout box summarizes plain-English comparative findings (relative seasonality, dominant model, forecastability, and differencing correlation).
+  - Comparative KPI matrix table displays KPI | Dataset A | Dataset B | Comparability Note.
+  - 4 interactive comparative visualizations render:
+    1. Indexed Growth Overlay (Base = 100)
+    2. Grouped Accuracy Bar Chart (MASE, sMAPE, RelRMSE)
+    3. Component Strength Comparisons (Hyndman Trend and Seasonal metrics)
+    4. Side-by-Side Forward Projections
+  - Click **"📥 Download KPI Comparison (CSV)"** and confirm file download.
+  - Click **"📊 Download Executive Comparative Report (Excel Workbook)"** and open file:
+    - Verify 6 sheets exist: `KPIs`, `Findings`, `Leaderboard_A`, `Leaderboard_B`, `Future_A`, `Future_B`.

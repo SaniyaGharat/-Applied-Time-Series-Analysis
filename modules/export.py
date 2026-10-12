@@ -9,7 +9,7 @@ Provides:
 
 import io
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 
 
@@ -106,3 +106,83 @@ def build_excel_report(
             pd.DataFrame({"Info": ["No specs recorded"]}).to_excel(writer, sheet_name="Specs", index=False)
 
     return output.getvalue()
+
+
+def build_dashboard_report(
+    kpi_df: Optional[pd.DataFrame] = None,
+    comparison_a: Optional[pd.DataFrame] = None,
+    comparison_b: Optional[pd.DataFrame] = None,
+    future_a: Optional[Union[pd.DataFrame, Any]] = None,
+    future_b: Optional[Union[pd.DataFrame, Any]] = None,
+    findings: Optional[List[str]] = None,
+) -> bytes:
+    """
+    Generate an Excel workbook report for two-dataset comparison with 6 sheets:
+    - KPIs: Comparative scale-free metrics and notes
+    - Findings: Plain-English synthesized findings
+    - Leaderboard_A: Model evaluation table for Dataset A
+    - Leaderboard_B: Model evaluation table for Dataset B
+    - Future_A: Future projection mean and prediction intervals for Dataset A
+    - Future_B: Future projection mean and prediction intervals for Dataset B
+
+    Returns
+    -------
+    bytes
+        Raw Excel workbook binary stream loadable by openpyxl.
+    """
+    output = io.BytesIO()
+
+    # Extract DataFrames if ForecastResult objects passed
+    df_fa = future_a.df if hasattr(future_a, "df") else future_a
+    df_fb = future_b.df if hasattr(future_b, "df") else future_b
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        # Sheet 1: KPIs
+        if kpi_df is not None and not kpi_df.empty:
+            kpi_df.to_excel(writer, sheet_name="KPIs", index=False)
+        else:
+            pd.DataFrame({"Info": ["No KPI data available"]}).to_excel(writer, sheet_name="KPIs", index=False)
+
+        # Sheet 2: Findings
+        if findings:
+            findings_clean = [f.replace("**", "") for f in findings]
+            pd.DataFrame({"Key Findings": findings_clean}).to_excel(writer, sheet_name="Findings", index=False)
+        else:
+            pd.DataFrame({"Key Findings": ["No comparative findings recorded"]}).to_excel(
+                writer, sheet_name="Findings", index=False
+            )
+
+        # Sheet 3: Leaderboard_A
+        if comparison_a is not None and not comparison_a.empty:
+            comparison_a.to_excel(writer, sheet_name="Leaderboard_A", index=False)
+        else:
+            pd.DataFrame({"Info": ["No leaderboard data available for Dataset A"]}).to_excel(
+                writer, sheet_name="Leaderboard_A", index=False
+            )
+
+        # Sheet 4: Leaderboard_B
+        if comparison_b is not None and not comparison_b.empty:
+            comparison_b.to_excel(writer, sheet_name="Leaderboard_B", index=False)
+        else:
+            pd.DataFrame({"Info": ["No leaderboard data available for Dataset B"]}).to_excel(
+                writer, sheet_name="Leaderboard_B", index=False
+            )
+
+        # Sheet 5: Future_A
+        if df_fa is not None and isinstance(df_fa, pd.DataFrame) and not df_fa.empty:
+            df_fa.to_excel(writer, sheet_name="Future_A", index=True)
+        else:
+            pd.DataFrame({"Info": ["No future forecast available for Dataset A"]}).to_excel(
+                writer, sheet_name="Future_A", index=False
+            )
+
+        # Sheet 6: Future_B
+        if df_fb is not None and isinstance(df_fb, pd.DataFrame) and not df_fb.empty:
+            df_fb.to_excel(writer, sheet_name="Future_B", index=True)
+        else:
+            pd.DataFrame({"Info": ["No future forecast available for Dataset B"]}).to_excel(
+                writer, sheet_name="Future_B", index=False
+            )
+
+    return output.getvalue()
+

@@ -40,16 +40,17 @@ def adf_test(
     if len(clean_s) < 10:
         raise ValueError("Series is too short for ADF test (minimum 10 observations required).")
 
+    eval_s = clean_s.iloc[-5000:] if len(clean_s) > 5000 else clean_s
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=FutureWarning)
-        res = adfuller(clean_s, regression=regression, autolag=autolag)
+        res = adfuller(eval_s, regression=regression, autolag=autolag)
     stat, pval, used_lag, nobs, crit, _ = res
 
     return {
         "statistic": float(stat),
         "pvalue": float(pval),
         "used_lag": int(used_lag),
-        "nobs": int(nobs),
+        "nobs": int(len(clean_s)),
         "critical_values": {k: float(v) for k, v in crit.items()},
         "is_stationary": bool(pval < 0.05),
     }

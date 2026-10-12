@@ -44,13 +44,17 @@ def plot_time_series(
         Interactive Plotly figure.
     """
     clean_s = series.dropna()
+    plot_s = clean_s
+    if len(clean_s) > 5000:
+        step = max(1, len(clean_s) // 5000)
+        plot_s = clean_s.iloc[::step]
     fig = go.Figure()
 
     fig.add_trace(
         go.Scatter(
-            x=clean_s.index,
-            y=clean_s.values,
-            mode="lines+markers" if len(clean_s) <= 100 else "lines",
+            x=plot_s.index,
+            y=plot_s.values,
+            mode="lines+markers" if len(plot_s) <= 100 else "lines",
             name=clean_s.name or "Value",
             line=dict(color=line_color, width=2),
             marker=dict(size=4),
@@ -1666,5 +1670,177 @@ def plot_future_forecast(
         margin=dict(l=40, r=40, t=60, b=40),
     )
     return fig
+
+
+def plot_indexed_overlay(
+    series_a: pd.Series,
+    series_b: pd.Series,
+    names: Tuple[str, str] = ("Dataset A", "Dataset B"),
+    title: Optional[str] = None,
+) -> go.Figure:
+    """
+    Build an indexed time series overlay plot where both series are rebased to 100 at their start.
+    """
+    clean_a = series_a.dropna() if series_a is not None else pd.Series(dtype=float)
+    clean_b = series_b.dropna() if series_b is not None else pd.Series(dtype=float)
+
+    base_a = float(clean_a.iloc[0]) if len(clean_a) > 0 and clean_a.iloc[0] != 0 else 1.0
+    base_b = float(clean_b.iloc[0]) if len(clean_b) > 0 and clean_b.iloc[0] != 0 else 1.0
+
+    idx_a = (clean_a / base_a) * 100.0 if len(clean_a) > 0 else clean_a
+    idx_b = (clean_b / base_b) * 100.0 if len(clean_b) > 0 else clean_b
+
+    if len(idx_a) > 5000:
+        idx_a = idx_a.iloc[::max(1, len(idx_a) // 5000)]
+    if len(idx_b) > 5000:
+        idx_b = idx_b.iloc[::max(1, len(idx_b) // 5000)]
+
+    fig = go.Figure()
+
+    if len(idx_a) > 0:
+        fig.add_trace(
+            go.Scatter(
+                x=idx_a.index,
+                y=idx_a.values,
+                mode="lines",
+                name=names[0],
+                line=dict(color="#2563eb", width=2),
+                hovertemplate=f"<b>{names[0]}</b>: %{{y:.1f}}<extra></extra>",
+            )
+        )
+
+    if len(idx_b) > 0:
+        fig.add_trace(
+            go.Scatter(
+                x=idx_b.index,
+                y=idx_b.values,
+                mode="lines",
+                name=names[1],
+                line=dict(color="#10b981", width=2),
+                hovertemplate=f"<b>{names[1]}</b>: %{{y:.1f}}<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        title=title or "Indexed Growth Comparison (Rebased to 100 at Start)",
+        xaxis_title="Date / Time",
+        yaxis_title="Index Level (Base = 100)",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+
+    return fig
+
+
+def plot_kpi_grouped_bars(
+    kpi_df: pd.DataFrame,
+    names: Tuple[str, str] = ("Dataset A", "Dataset B"),
+) -> go.Figure:
+    """
+    Build a grouped bar chart comparing key scale-free forecast metrics (MASE, sMAPE, RelRMSE).
+    """
+    metrics_to_plot = ["Best Model MASE", "Best Model sMAPE", "RelRMSE vs Naive"]
+    labels = ["MASE", "sMAPE (%)", "RelRMSE vs Naive"]
+    val_a: List[float] = []
+    val_b: List[float] = []
+
+    for m in metrics_to_plot:
+        row = kpi_df[kpi_df["KPI"] == m] if (kpi_df is not None and "KPI" in kpi_df.columns and not kpi_df.empty) else pd.DataFrame()
+        if not row.empty:
+            a_str = str(row["A"].iloc[0]).replace("%", "").strip()
+            b_str = str(row["B"].iloc[0]).replace("%", "").strip()
+            try:
+                val_a.append(float(a_str))
+            except Exception:
+                val_a.append(0.0)
+            try:
+                val_b.append(float(b_str))
+            except Exception:
+                val_b.append(0.0)
+        else:
+            val_a.append(0.0)
+            val_b.append(0.0)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=labels,
+            y=val_a,
+            name=names[0],
+            marker_color="#2563eb",
+            text=[f"{v:.2f}" for v in val_a],
+            textposition="auto",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=labels,
+            y=val_b,
+            name=names[1],
+            marker_color="#10b981",
+            text=[f"{v:.2f}" for v in val_b],
+            textposition="auto",
+        )
+    )
+
+    fig.update_layout(
+        template="plotly_white",
+        title="Comparative Forecast Accuracy (Lower is Better)",
+        barmode="group",
+        yaxis_title="Metric Value",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig
+
+
+def plot_gauge_or_bar(
+    trend_a: float,
+    trend_b: float,
+    seas_a: float,
+    seas_b: float,
+    names: Tuple[str, str] = ("Dataset A", "Dataset B"),
+) -> go.Figure:
+    """
+    Build comparative grouped bars for Trend and Seasonal Strength.
+    """
+    categories = ["Trend Strength (F_t)", "Seasonal Strength (F_s)"]
+    val_a = [float(trend_a or 0.0), float(seas_a or 0.0)]
+    val_b = [float(trend_b or 0.0), float(seas_b or 0.0)]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=categories,
+            y=val_a,
+            name=names[0],
+            marker_color="#2563eb",
+            text=[f"{v:.2f}" for v in val_a],
+            textposition="auto",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=categories,
+            y=val_b,
+            name=names[1],
+            marker_color="#10b981",
+            text=[f"{v:.2f}" for v in val_b],
+            textposition="auto",
+        )
+    )
+
+    fig.update_layout(
+        template="plotly_white",
+        title="Component Strengths Comparison (Hyndman Metrics)",
+        barmode="group",
+        yaxis=dict(range=[0, 1.05], title="Strength Index [0, 1]"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig
+
 
 

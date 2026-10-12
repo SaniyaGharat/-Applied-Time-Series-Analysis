@@ -36,6 +36,25 @@ An end-to-end interactive Streamlit web application designed for applied time se
   - `Holdout_Forecasts`: Holdout validation predictions and bounds
   - `Future_Forecast`: Forward projection point forecasts and intervals
   - `Specs`: Model JSON specifications, transforms, holdout size, and execution metadata
+- **Two-Dataset Comparative Analysis (`⚖️ Compare Datasets`)**:
+  - Side-by-side or stacked (A above B) deep comparative evaluation of two distinct time series.
+  - Independent slot configuration (Slot A and Slot B) with isolated session namespaces (`cmpA_*`, `cmpB_*`) and cached execution (`@st.cache_data`).
+  - 7 comprehensive comparative diagnostic and modeling sections with plain-English expanders:
+    1. Series & summary stats with base=100 indexed growth overlay
+    2. Joint ADF & KPSS stationarity tests with verdict banners
+    3. Contiguous differenced ACF / PACF serial correlation
+    4. Time series decomposition with Hyndman trend and seasonal strength metrics
+    5. Candidate model out-of-sample leaderboards ranked by MASE
+    6. Holdout validation forecast overlay across top-3 candidate architectures
+    7. Out-of-sample forward projections with 95% prediction intervals
+  - Scale-free metric guidance: explicit warnings that raw RMSE and MAE cannot be compared across series with different units.
+- **Executive Comparative Dashboard (`📊 Dashboard`)**:
+  - Dataset metadata cards and date span chips.
+  - Dual-row metric cards across 11 scale-free KPIs (22 total metrics).
+  - Econometric synthesis callout box with automated plain-English findings (seasonality, model dominance, predictability, differencing correlation).
+  - Cross-dataset KPI comparison table with comparability notes.
+  - 4 comparative interactive Plotly charts: indexed growth trajectory, grouped accuracy bars (MASE / sMAPE / RelRMSE), component strength comparisons, and side-by-side forward projections.
+  - Multi-sheet executive Excel report generator (`modules/export.py: build_dashboard_report`) with sheets: `KPIs`, `Findings`, `Leaderboard_A`, `Leaderboard_B`, `Future_A`, `Future_B`.
 
 ---
 
@@ -54,8 +73,9 @@ atsa/
 │   ├── diagnostics.py          # Stationarity tests (ADF/KPSS), ACF/PACF, STL decomposition
 │   ├── models.py               # 10 statistical & econometric model implementations
 │   ├── compare.py              # Out-of-sample leaderboard, DM test, equal-weight ensemble
-│   ├── export.py               # Multi-sheet styled Excel workbook builder (openpyxl)
-│   ├── plots.py                # Pure Plotly interactive figure builders
+│   ├── pipeline.py             # Pure Python automated analysis engine, KPI extractor & dataset comparison
+│   ├── export.py               # Multi-sheet styled Excel workbook builders (single & dual dataset)
+│   ├── plots.py                # Pure Plotly interactive figure builders (indexed overlay, grouped bars, etc.)
 │   └── utils.py                # Helper utilities and type definitions
 ├── ui/
 │   ├── __init__.py
@@ -63,16 +83,22 @@ atsa/
 │   ├── eda_tab.py              # 🔍 EDA & Diagnostics: Stationarity tests, decomposition, transforms
 │   ├── models_tab.py           # 🧮 Models: Model zoo tuning, diagnostics, residual checks
 │   ├── forecast_tab.py         # 🔮 Forecast & Compare: Leaderboard, future forecasts, Excel export
+│   ├── compare_tab.py          # ⚖️ Compare Datasets: Dual dataset ingestion, stacked/side-by-side analysis
+│   ├── dashboard_tab.py        # 📊 Dashboard: Executive KPI cards, synthesis findings, 6-sheet export
 │   └── model_common.py         # Shared model fitting and session state coordination
 ├── scripts/
-│   └── measure_benchmarks.py   # Benchmark script for cold-start and RSS memory profiling
+│   ├── measure_benchmarks.py   # Benchmark script for model zoo cold-start and RSS memory profiling
+│   └── measure_phase8_benchmarks.py # Benchmark script for Phase 8 dual-dataset pipeline execution
 ├── tests/
 │   ├── __init__.py
 │   ├── test_a1.py              # Frequency alignment and resample tests
 │   ├── test_diagnostics.py     # Statistical diagnostics and decomposition tests
 │   ├── test_models.py          # Core model zoo estimation and metrics tests
-│   └── test_app_smoke.py       # End-to-end Streamlit AppTest smoke & edge case suite
-├── app.py                      # Main Streamlit application entry point
+│   ├── test_compare.py         # Model comparison, DM test, and ensemble tests
+│   ├── test_pipeline.py        # Pure analytical pipeline, bundle picklability, and KPI comparison tests
+│   ├── test_dashboard_export.py # 6-sheet dashboard Excel workbook export tests
+│   └── test_app_smoke.py       # End-to-end Streamlit AppTest smoke, edge case & Compare/Dashboard tests
+├── app.py                      # Main Streamlit application entry point (6 tabs router)
 ├── requirements.txt            # Production dependencies pinned with ==
 ├── requirements-dev.txt        # Development and testing dependencies (pytest)
 ├── DEPLOY.md                   # Step-by-step deployment guide & post-deploy smoke checklist
