@@ -17,7 +17,13 @@ from modules.pipeline import (
     compute_kpis,
     run_analysis,
 )
-from modules.plots import plot_arima_family_bars
+from modules.plots import (
+    plot_arima_dual_overlay,
+    plot_arima_family_bars,
+    plot_arima_multi_metric_bars,
+    plot_arima_radar,
+    plot_single_dataset_arima_bars,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
@@ -250,4 +256,26 @@ def test_build_arima_family_comparison_and_plots():
         assert len(fig.data) == 2  # Two series traces (A and B)
         assert len(fig.data[0].x) == 5  # 5 Box-Jenkins architectures
         assert list(fig.data[0].x) == ["AR", "MA", "ARMA", "ARIMA", "SARIMA"]
+
+    # Test multi-metric 3-panel figure
+    fig_multi = plot_arima_multi_metric_bars(bundle_a, bundle_b, names=(bundle_a.name, bundle_b.name))
+    assert fig_multi is not None
+    assert len(fig_multi.data) == 6  # 2 series traces * 3 subplots = 6 traces
+
+    # Test dual overlay stacked figure
+    fig_dual = plot_arima_dual_overlay(bundle_a, bundle_b, names=(bundle_a.name, bundle_b.name))
+    assert fig_dual is not None
+    assert len(fig_dual.data) >= 6  # Actuals + multiple Box-Jenkins models
+
+    # Test radar plot
+    fig_radar = plot_arima_radar(bundle_a, bundle_b, names=(bundle_a.name, bundle_b.name))
+    assert fig_radar is not None
+    assert len(fig_radar.data) == 2
+
+    # Test single-dataset bar plot
+    fig_single = plot_single_dataset_arima_bars(bundle_a.model_results, metric="MASE")
+    assert fig_single is not None
+    assert len(fig_single.data) == 1
+    assert list(fig_single.data[0].x) == ["AR", "MA", "ARMA", "ARIMA", "SARIMA"]
+
 

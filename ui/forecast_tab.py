@@ -38,6 +38,7 @@ from modules.plots import (
     plot_future_forecast,
     plot_ic_bars,
     plot_metric_bars,
+    plot_single_dataset_arima_bars,
 )
 from ui.model_common import fit_all_default_models
 
@@ -257,8 +258,8 @@ def render_forecast_tab() -> None:
     )
 
     # Comparison Visualizations Tabs
-    tab_overlay, tab_metrics, tab_ic, tab_error, tab_sig = st.tabs(
-        ["📈 Forecast Overlay", "📊 Metric Bars", "🏛️ Information Criteria", "📉 Error by Horizon", "🔬 Statistical Significance"]
+    tab_overlay, tab_metrics, tab_bj, tab_ic, tab_error, tab_sig = st.tabs(
+        ["📈 Forecast Overlay", "📊 Metric Bars", "🎯 Box-Jenkins Zoo", "🏛️ Information Criteria", "📉 Error by Horizon", "🔬 Statistical Significance"]
     )
 
     with tab_overlay:
@@ -281,6 +282,32 @@ def render_forecast_tab() -> None:
     with tab_metrics:
         fig_metric = plot_metric_bars(comp_df, metric=rank_metric)
         st.plotly_chart(fig_metric, width="stretch")
+
+    with tab_bj:
+        bj_models = [r for r in selected_models if getattr(r, "family", "") in ("ar", "ma", "arma", "arima", "sarima")]
+        if bj_models:
+            st.markdown("##### 🏛️ Classical Box-Jenkins Architecture Comparison (AR, MA, ARMA, ARIMA, SARIMA)")
+            bj_met_choice = st.radio(
+                "Metric for Box-Jenkins Comparison:",
+                ["MASE", "sMAPE", "AIC"],
+                horizontal=True,
+                key="fc_bj_met_choice",
+            )
+            fig_bj_bar = plot_single_dataset_arima_bars(bj_models, metric=bj_met_choice)
+            st.plotly_chart(fig_bj_bar, width="stretch")
+
+            actual_holdout = ts_series.iloc[-holdout_size:]
+            bj_fc_dict = {
+                r.label: r.test_forecast
+                for r in bj_models
+                if getattr(r, "test_forecast", None) is not None and not r.test_forecast.empty
+            }
+            if bj_fc_dict:
+                fig_bj_ov = plot_forecast_overlay(actual=actual_holdout, forecasts=bj_fc_dict)
+                fig_bj_ov.update_layout(title="Box-Jenkins Models vs Holdout Ground Truth")
+                st.plotly_chart(fig_bj_ov, width="stretch")
+        else:
+            st.info("No Box-Jenkins models (AR, MA, ARMA, ARIMA, SARIMA) have been fitted yet. Please fit baseline/ARIMA models in the Models tab.")
 
     with tab_ic:
         fig_ic = plot_ic_bars(comp_df)

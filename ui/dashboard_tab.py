@@ -23,6 +23,7 @@ from modules.export import build_dashboard_report
 from modules.pipeline import AnalysisBundle, compare_datasets, compute_kpis
 from modules.plots import (
     plot_arima_family_bars,
+    plot_arima_multi_metric_bars,
     plot_future_forecast,
     plot_gauge_or_bar,
     plot_indexed_overlay,
@@ -154,9 +155,9 @@ def render_dashboard_tab() -> None:
         )
         st.plotly_chart(fig_strengths, use_container_width=True, key="dash_chart_strengths")
 
-    # Chart 4: Box-Jenkins Zoo Accuracy Comparison
-    st.markdown("#### 4. Box-Jenkins Zoo Accuracy (AR, MA, ARMA, ARIMA, SARIMA)")
-    fig_bj = plot_arima_family_bars(bundle_a, bundle_b, metric="MASE", names=(bundle_a.name, bundle_b.name))
+    # Chart 4: Box-Jenkins Zoo Multi-Metric Comparison
+    st.markdown("#### 4. Box-Jenkins Zoo Evaluation (AR, MA, ARMA, ARIMA, SARIMA)")
+    fig_bj = plot_arima_multi_metric_bars(bundle_a, bundle_b, names=(bundle_a.name, bundle_b.name))
     st.plotly_chart(fig_bj, use_container_width=True, key="dash_chart_arima_family")
 
     # Chart 5: Side-by-Side Future Forecasts

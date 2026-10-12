@@ -31,7 +31,10 @@ from modules.diagnostics import decompose
 from modules.pipeline import AnalysisBundle, build_arima_family_comparison, run_analysis
 from modules.plots import (
     plot_acf_pacf_combined,
+    plot_arima_dual_overlay,
     plot_arima_family_bars,
+    plot_arima_multi_metric_bars,
+    plot_arima_radar,
     plot_decomposition,
     plot_forecast_overlay,
     plot_future_forecast,
@@ -465,15 +468,37 @@ def render_compare_tab() -> None:
         bj_df = build_arima_family_comparison(b_a, b_b)
         st.dataframe(bj_df, use_container_width=True)
 
-        metric_choice = st.radio(
-            "Comparative Metric for Box-Jenkins Chart:",
-            ["MASE (Holdout Error)", "sMAPE (%)", "AIC (Information Criterion)"],
+        bj_plot_mode = st.radio(
+            "Box-Jenkins Comparative Plot Type:",
+            [
+                "📊 3-Metric Overview Panel (MASE, sMAPE, AIC)",
+                "📈 Stacked Holdout Forecast Trajectories",
+                "🎯 Focus Metric Bars",
+                "🕸️ Relative Accuracy Radar",
+            ],
             horizontal=True,
-            key="cmp_bj_metric_choice",
+            key="cmp_bj_plot_mode",
         )
-        metric_key = "MASE" if "MASE" in metric_choice else ("sMAPE" if "sMAPE" in metric_choice else "AIC")
-        fig_bj_bars = plot_arima_family_bars(b_a, b_b, metric=metric_key, names=(b_a.name, b_b.name))
-        st.plotly_chart(fig_bj_bars, use_container_width=True, key="cmp_bj_bars_plot")
+
+        if bj_plot_mode == "📊 3-Metric Overview Panel (MASE, sMAPE, AIC)":
+            fig_multi = plot_arima_multi_metric_bars(b_a, b_b, names=(b_a.name, b_b.name))
+            st.plotly_chart(fig_multi, use_container_width=True, key="cmp_bj_multi_metric_plot")
+        elif bj_plot_mode == "📈 Stacked Holdout Forecast Trajectories":
+            fig_dual_ov = plot_arima_dual_overlay(b_a, b_b, names=(b_a.name, b_b.name))
+            st.plotly_chart(fig_dual_ov, use_container_width=True, key="cmp_bj_dual_overlay_plot")
+        elif bj_plot_mode == "🕸️ Relative Accuracy Radar":
+            fig_radar = plot_arima_radar(b_a, b_b, names=(b_a.name, b_b.name))
+            st.plotly_chart(fig_radar, use_container_width=True, key="cmp_bj_radar_plot")
+        else:
+            metric_choice = st.radio(
+                "Comparative Metric for Focus Chart:",
+                ["MASE (Holdout Error)", "sMAPE (%)", "AIC (Information Criterion)"],
+                horizontal=True,
+                key="cmp_bj_metric_choice",
+            )
+            metric_key = "MASE" if "MASE" in metric_choice else ("sMAPE" if "sMAPE" in metric_choice else "AIC")
+            fig_bj_bars = plot_arima_family_bars(b_a, b_b, metric=metric_key, names=(b_a.name, b_b.name))
+            st.plotly_chart(fig_bj_bars, use_container_width=True, key="cmp_bj_bars_plot")
         st.markdown("---")
     else:
         def _render_leaderboard(bundle: AnalysisBundle):

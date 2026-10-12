@@ -1937,5 +1937,334 @@ def plot_arima_family_bars(
     return fig
 
 
+def plot_arima_multi_metric_bars(
+    bundle_a,
+    bundle_b,
+    names: Tuple[str, str] = ("Dataset A", "Dataset B"),
+) -> go.Figure:
+    """
+    Build 3-panel comparative grouped bars for Box-Jenkins ARIMA family models:
+    AR, MA, ARMA, ARIMA, and SARIMA across:
+    1. Holdout MASE (Lower is Better)
+    2. Holdout sMAPE (%) (Lower is Better)
+    3. AIC Information Criterion (Lower is Better)
+    """
+    families = [
+        ("ar", "AR"),
+        ("ma", "MA"),
+        ("arma", "ARMA"),
+        ("arima", "ARIMA"),
+        ("sarima", "SARIMA"),
+    ]
+    categories = [label for _, label in families]
+
+    map_a = {r.family: r for r in getattr(bundle_a, "model_results", [])}
+    map_b = {r.family: r for r in getattr(bundle_b, "model_results", [])}
+
+    def _extract(res, met):
+        if not res:
+            return None
+        m_low = met.lower()
+        if m_low in ("mase", "smape"):
+            v = res.metrics_test.get(m_low)
+            return float(v) if (v is not None and not np.isnan(v)) else None
+        elif m_low == "aic":
+            v = (res.information_criteria or {}).get("aic")
+            return float(v) if (v is not None and not np.isnan(v)) else None
+        return None
+
+    metrics_meta = [
+        ("mase", "Holdout MASE", "{:.3f}"),
+        ("smape", "Holdout sMAPE (%)", "{:.1f}%"),
+        ("aic", "Akaike IC (AIC)", "{:.1f}"),
+    ]
+
+    fig = make_subplots(
+        rows=1,
+        cols=3,
+        subplot_titles=[title for _, title, _ in metrics_meta],
+        horizontal_spacing=0.08,
+    )
+
+    for c_idx, (m_key, title, fmt) in enumerate(metrics_meta, start=1):
+        vals_a = [_extract(map_a.get(fk), m_key) for fk, _ in families]
+        vals_b = [_extract(map_b.get(fk), m_key) for fk, _ in families]
+
+        txt_a = [fmt.format(v) if v is not None else "N/A" for v in vals_a]
+        txt_b = [fmt.format(v) if v is not None else "N/A" for v in vals_b]
+
+        y_a = [v if v is not None else 0 for v in vals_a]
+        y_b = [v if v is not None else 0 for v in vals_b]
+
+        fig.add_trace(
+            go.Bar(
+                x=categories,
+                y=y_a,
+                name=names[0],
+                marker_color="#2563eb",
+                text=txt_a,
+                textposition="auto",
+                showlegend=(c_idx == 1),
+            ),
+            row=1,
+            col=c_idx,
+        )
+        fig.add_trace(
+            go.Bar(
+                x=categories,
+                y=y_b,
+                name=names[1],
+                marker_color="#10b981",
+                text=txt_b,
+                textposition="auto",
+                showlegend=(c_idx == 1),
+            ),
+            row=1,
+            col=c_idx,
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        title="Box-Jenkins Architecture Evaluation: Multi-Metric Comparison (AR, MA, ARMA, ARIMA, SARIMA)",
+        barmode="group",
+        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=80, b=40),
+    )
+    return fig
+
+
+def plot_arima_dual_overlay(
+    bundle_a,
+    bundle_b,
+    names: Tuple[str, str] = ("Dataset A", "Dataset B"),
+) -> go.Figure:
+    """
+    Build stacked 2-row subplot comparing actual holdout against Box-Jenkins forecasts:
+    AR, MA, ARMA, ARIMA, and SARIMA for Dataset A (Row 1) and Dataset B (Row 2).
+    """
+    bj_families = [
+        ("ar", "AR", "#2563eb", "dot"),
+        ("ma", "MA", "#7c3aed", "dash"),
+        ("arma", "ARMA", "#f59e0b", "dashdot"),
+        ("arima", "ARIMA", "#059669", "longdash"),
+        ("sarima", "SARIMA", "#dc2626", "solid"),
+    ]
+
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        subplot_titles=[
+            f"🔹 {names[0]} - Actual Holdout vs Box-Jenkins Models",
+            f"🔸 {names[1]} - Actual Holdout vs Box-Jenkins Models",
+        ],
+        vertical_spacing=0.14,
+    )
+
+    for row_idx, bundle in enumerate([bundle_a, bundle_b], start=1):
+        if not bundle or bundle.series is None or len(bundle.series) <= bundle.holdout:
+            continue
+
+        actual_holdout = bundle.series.iloc[-bundle.holdout:]
+        fig.add_trace(
+            go.Scatter(
+                x=actual_holdout.index,
+                y=actual_holdout.values,
+                mode="lines+markers",
+                marker=dict(size=4),
+                line=dict(color="#0f172a", width=2.8),
+                name="Actual Holdout" if row_idx == 1 else "Actual (B)",
+                showlegend=(row_idx == 1),
+                hovertemplate="<b>Actual</b>: %{y:.3f}<br>%{x}<extra></extra>",
+            ),
+            row=row_idx,
+            col=1,
+        )
+
+        map_res = {r.family: r for r in getattr(bundle, "model_results", [])}
+        for fam_key, label, color, dash_style in bj_families:
+            res = map_res.get(fam_key)
+            if not res or getattr(res, "test_forecast", None) is None or res.test_forecast.empty:
+                continue
+            fc_df = res.test_forecast
+            if "mean" not in fc_df.columns:
+                continue
+
+            fig.add_trace(
+                go.Scatter(
+                    x=fc_df.index,
+                    y=fc_df["mean"].values,
+                    mode="lines+markers",
+                    marker=dict(size=3),
+                    line=dict(color=color, width=2, dash=dash_style),
+                    name=label,
+                    showlegend=(row_idx == 1),
+                    hovertemplate=f"<b>{label}</b>: %{{y:.3f}}<br>%{{x}}<extra></extra>",
+                ),
+                row=row_idx,
+                col=1,
+            )
+
+    fig.update_layout(
+        template="plotly_white",
+        title="Box-Jenkins Holdout Trajectory Comparison (AR, MA, ARMA, ARIMA, SARIMA)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.04, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=70, b=40),
+        height=700,
+    )
+    return fig
+
+
+def plot_arima_radar(
+    bundle_a,
+    bundle_b,
+    names: Tuple[str, str] = ("Dataset A", "Dataset B"),
+) -> go.Figure:
+    """
+    Build comparative radar (spider) plot of Box-Jenkins architectures (AR, MA, ARMA, ARIMA, SARIMA)
+    evaluating relative inverse MASE (higher = better accuracy).
+    """
+    families = [
+        ("ar", "AR"),
+        ("ma", "MA"),
+        ("arma", "ARMA"),
+        ("arima", "ARIMA"),
+        ("sarima", "SARIMA"),
+    ]
+    categories = [label for _, label in families]
+
+    map_a = {r.family: r for r in getattr(bundle_a, "model_results", [])}
+    map_b = {r.family: r for r in getattr(bundle_b, "model_results", [])}
+
+    def _inv_mase(res):
+        if not res:
+            return 0.0
+        v = res.metrics_test.get("mase")
+        if v is not None and not np.isnan(v) and v > 0:
+            return round(1.0 / float(v), 3)
+        return 0.0
+
+    scores_a = [_inv_mase(map_a.get(fk)) for fk, _ in families]
+    scores_b = [_inv_mase(map_b.get(fk)) for fk, _ in families]
+
+    r_a = scores_a + [scores_a[0]]
+    r_b = scores_b + [scores_b[0]]
+    theta = categories + [categories[0]]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatterpolar(
+            r=r_a,
+            theta=theta,
+            fill="toself",
+            name=names[0],
+            line=dict(color="#2563eb", width=2),
+            fillcolor="rgba(37, 99, 235, 0.2)",
+        )
+    )
+    fig.add_trace(
+        go.Scatterpolar(
+            r=r_b,
+            theta=theta,
+            fill="toself",
+            name=names[1],
+            line=dict(color="#10b981", width=2),
+            fillcolor="rgba(16, 185, 129, 0.2)",
+        )
+    )
+
+    max_rad = max(max(r_a), max(r_b), 1.0) * 1.15
+
+    fig.update_layout(
+        template="plotly_white",
+        title="Box-Jenkins Relative Accuracy Radar (1 / MASE, Higher = Better)",
+        polar=dict(
+            radialaxis=dict(visible=True, range=[0, max_rad])
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.04, xanchor="right", x=1),
+        margin=dict(l=50, r=50, t=60, b=40),
+    )
+    return fig
+
+
+def plot_single_dataset_arima_bars(
+    model_results: List[Any],
+    metric: str = "MASE",
+) -> go.Figure:
+    """
+    Build bar chart evaluating Box-Jenkins models (AR, MA, ARMA, ARIMA, SARIMA) for a single dataset.
+    Highlights the winning Box-Jenkins model.
+    """
+    families = [
+        ("ar", "AR"),
+        ("ma", "MA"),
+        ("arma", "ARMA"),
+        ("arima", "ARIMA"),
+        ("sarima", "SARIMA"),
+    ]
+    categories = [label for _, label in families]
+    map_res = {getattr(r, "family", ""): r for r in model_results}
+
+    vals = []
+    texts = []
+    m_lower = metric.lower()
+    for fk, _ in families:
+        r = map_res.get(fk)
+        if not r:
+            vals.append(None)
+            texts.append("Not Fitted")
+            continue
+        if m_lower in ("mase", "smape", "rmse", "mae"):
+            v = r.metrics_test.get(m_lower)
+        elif m_lower in ("aic", "bic"):
+            v = (r.information_criteria or {}).get(m_lower)
+        else:
+            v = None
+
+        if v is not None and not np.isnan(v):
+            vals.append(float(v))
+            if m_lower == "smape":
+                texts.append(f"{v:.1f}%")
+            elif m_lower == "mase":
+                texts.append(f"{v:.3f}")
+            else:
+                texts.append(f"{v:.1f}")
+        else:
+            vals.append(None)
+            texts.append("N/A")
+
+    plot_y = [v if v is not None else 0 for v in vals]
+    valid_nums = [v for v in vals if v is not None]
+    min_v = min(valid_nums) if valid_nums else None
+
+    colors = []
+    for v in vals:
+        if v is not None and min_v is not None and v == min_v:
+            colors.append("#2563eb")
+        else:
+            colors.append("#94a3b8")
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=categories,
+            y=plot_y,
+            text=texts,
+            textposition="auto",
+            marker=dict(color=colors),
+            hovertemplate="<b>%{x}</b><br>Value: %{text}<extra></extra>",
+        )
+    )
+
+    fig.update_layout(
+        template="plotly_white",
+        title=f"Box-Jenkins Model Family Comparison ({metric.upper()} - Lowest is Best)",
+        xaxis=dict(title="Box-Jenkins Architecture"),
+        yaxis=dict(title=metric.upper()),
+        margin=dict(l=40, r=40, t=50, b=40),
+    )
+    return fig
+
+
+
 
 
