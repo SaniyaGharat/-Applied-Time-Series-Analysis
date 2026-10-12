@@ -19,25 +19,9 @@ from ui.models_tab import render_models_tab
 
 
 def render_sidebar() -> None:
-    """Render the sidebar navigation and application guide."""
-    st.sidebar.title("📈 ATSA Suite")
-    st.sidebar.caption("Applied Time Series Analysis")
-
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🧭 Navigation Guide")
-
-    st.sidebar.markdown(
-        """
-        - **📥 Data**: Upload CSV/Excel or load sample datasets, regularize time frequency, and handle missing values.
-        - **🔍 EDA & Diagnostics**: Stationarity testing (ADF/KPSS), STL decomposition, autocorrelation (ACF/PACF), and variance transforms.
-        - **🧮 Models**: Interactive econometric model zoo (AR, MA, ARMA, ARIMA, SARIMA, SARIMAX, Holt-Winters) with residual diagnostics.
-        - **🔮 Forecast & Compare**: Holdout validation leaderboard, Diebold-Mariano tests, and multi-step future projections.
-        - **⚖️ Compare Datasets**: Simultaneous side-by-side or stacked multi-facet analysis of two time series datasets.
-        - **📊 Dashboard**: Final comparative executive dashboard with cross-dataset KPI cards, findings, and Excel/CSV exports.
-        """
-    )
-    st.sidebar.markdown("---")
-    st.sidebar.caption("🚀 **Phase 8 Active**: Two-Dataset Comparison & KPI Dashboard")
+    """Render the sidebar branding."""
+    st.sidebar.title("📈 Applied Time Series Analysis")
+    st.sidebar.caption("Econometric Modeling & Diagnostic Platform")
 
 
 def init_session_state() -> None:
