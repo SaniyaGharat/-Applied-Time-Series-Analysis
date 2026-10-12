@@ -595,6 +595,56 @@ def test_compare_tab_invalid_slot_b_shows_error_apptest():
     print(f"[PASS] Friendly st.error displayed on invalid slot B: {[e.value for e in at.error]}")
 
 
+def test_eda_transform_buttons_use_and_reset():
+    """Verify that 'Use Transformed Series' and 'Reset to Original' buttons work cleanly without exceptions."""
+    print("\n--- Testing EDA Transform Buttons (Use & Reset) ---")
+    at = _init_demo_apptest()
+    at.run()
+    assert not at.exception
+    assert len(at.error) == 0
+
+    # 1. Change transformation to Log and d=1
+    var_sel = at.selectbox("tf_var_select")
+    assert var_sel is not None
+    var_sel.select("Log (ln)")
+
+    diff_sel = at.selectbox("tf_diff_select")
+    assert diff_sel is not None
+    diff_sel.select(1).run()
+
+    assert not at.exception
+    assert len(at.error) == 0
+
+    # 2. Click 'Use Transformed Series for Modeling'
+    use_btn = [b for b in at.button if "Use Transformed Series" in b.label]
+    assert len(use_btn) > 0
+    use_btn[0].click().run()
+
+    assert not at.exception
+    assert len(at.error) == 0
+    tf_info = at.session_state["transform_info"]
+    assert tf_info.get("log") is True
+    assert tf_info.get("suggested_d") == 1
+    orig_s = at.session_state["ts_series"]
+    base_s = at.session_state["model_base_series"]
+    assert np.allclose(base_s.values, np.log(orig_s.values))
+
+    # 3. Click 'Reset to Original Regularized Series'
+    reset_btn = [b for b in at.button if "Reset to Original" in b.label]
+    assert len(reset_btn) > 0
+    reset_btn[0].click().run()
+
+    assert not at.exception
+    assert len(at.error) == 0
+    tf_info_reset = at.session_state["transform_info"]
+    assert tf_info_reset.get("suggested_d") == 0
+    assert tf_info_reset.get("steps") == []
+    assert np.allclose(at.session_state["model_base_series"].values, orig_s.values)
+    assert at.selectbox("tf_var_select").value == "None"
+    assert at.selectbox("tf_diff_select").value == 0
+    print("[PASS] EDA Transform Use and Reset buttons verified.")
+
+
 if __name__ == "__main__":
     print("==================================================")
     print("Starting ATSA Smoke & AppTest Suites...")
@@ -603,6 +653,7 @@ if __name__ == "__main__":
     test_app_pills_driving_harness()
     test_a1_use_best_order_apptest()
     test_a2_stale_widget_state_apptest()
+    test_eda_transform_buttons_use_and_reset()
     test_forecast_tab_and_future_forecasting()
     test_target_column_change_clears_forecast_results_apptest()
     test_forecast_tab_real_apptest()

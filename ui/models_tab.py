@@ -92,6 +92,12 @@ def render_models_tab() -> None:
     suggested_D = transform_info.get("suggested_D", 0)
     inferred_m = transform_info.get("seasonal_period") or infer_period_from_frequency(ts_series) or 12
 
+    if steps or suggested_d > 0 or suggested_D > 0:
+        st.info(
+            f"⚡ **Active Modeling Pipeline**: `{steps_txt}` | Auto-suggested differencing: `d={suggested_d}, D={suggested_D}` (Configured in EDA tab).",
+            icon="🚀",
+        )
+
     # A2: Stale widget reset when transform suggestions differ from last seen
     curr_suggestions = (suggested_d, suggested_D, inferred_m)
     if st.session_state.get("_last_transform_suggestions") != curr_suggestions:

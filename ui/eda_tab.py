@@ -363,6 +363,38 @@ def render_eda_tab() -> None:
             "($d, D$). In Phase 3, models receive the variance-stabilized **base series** and perform differencing internally."
         )
 
+        # Process pending reset for transformation widgets if flagged
+        if st.session_state.get("_pending_tf_reset"):
+            st.session_state.pop("_pending_tf_reset", None)
+            st.session_state["tf_var_select"] = "None"
+            st.session_state["tf_diff_select"] = 0
+            st.session_state["tf_seas_diff_select"] = 0
+
+        # Flash status notification banner if user clicked set or reset
+        if "tf_status_msg" in st.session_state:
+            msg_type, msg_text = st.session_state.pop("tf_status_msg")
+            if msg_type == "success":
+                st.success(msg_text, icon="✅")
+            else:
+                st.info(msg_text, icon="🔄")
+
+        # Active Modeling Pipeline Status Badge
+        curr_tf = st.session_state.get("transform_info", {})
+        curr_steps = curr_tf.get("steps", [])
+        curr_d = curr_tf.get("suggested_d", 0)
+        curr_D = curr_tf.get("suggested_D", 0)
+        if curr_steps or curr_d > 0 or curr_D > 0:
+            active_desc = " -> ".join(curr_steps) if curr_steps else "None"
+            st.success(
+                f"⚡ **Active in Modeling Pipeline**: `{active_desc}` | Suggested: `d={curr_d}, D={curr_D}`. "
+                "Candidate models in the **🧮 Models** tab will use this variance-stabilized series.",
+                icon="🚀",
+            )
+        else:
+            st.info(
+                "ℹ️ **Active in Modeling Pipeline**: Original Regularized Series (Raw scale, no transformations applied).",
+            )
+
         t_ctrl1, t_ctrl2, t_ctrl3, t_ctrl4 = st.columns(4)
 
         with t_ctrl1:
@@ -462,7 +494,12 @@ def render_eda_tab() -> None:
             # Action Buttons to set or reset model series
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("🚀 Use Transformed Series for Modeling", help="Save variance-stabilized series and suggested d, D for modeling.", width="stretch"):
+                if st.button(
+                    "🚀 Use Transformed Series for Modeling",
+                    help="Save variance-stabilized series and suggested d, D for modeling.",
+                    key="btn_apply_transformed_series",
+                    use_container_width=True,
+                ):
                     tf_info_copy = dict(tf_info)
                     tf_info_copy["suggested_d"] = diff_d
                     tf_info_copy["suggested_D"] = seas_d
@@ -471,12 +508,31 @@ def render_eda_tab() -> None:
                     st.session_state["model_series"] = transformed_s
                     st.session_state["model_base_series"] = base_s
                     st.session_state["transform_info"] = tf_info_copy
+                    st.session_state["model_results"] = {}
+                    st.session_state["forecast_results"] = {}
                     reset_model_widgets()
-                    st.toast("Transformed series set as active modeling series!", icon="🚀")
+
+                    desc_parts = []
+                    if var_transform != "None":
+                        desc_parts.append(var_transform)
+                    if diff_d > 0:
+                        desc_parts.append(f"d={diff_d}")
+                    if seas_d > 0:
+                        desc_parts.append(f"D={seas_d}")
+                    summary_str = ", ".join(desc_parts) if desc_parts else "Regularized raw series"
+                    st.session_state["tf_status_msg"] = (
+                        "success",
+                        f"Active modeling series updated to: **{summary_str}**! You can now proceed to the **🧮 Models** tab.",
+                    )
                     st.rerun()
 
             with btn_col2:
-                if st.button("🔄 Reset to Original Regularized Series", help="Restore active modeling series to original regularized data.", width="stretch"):
+                if st.button(
+                    "🔄 Reset to Original Regularized Series",
+                    help="Restore active modeling series and transformation controls to original regularized data.",
+                    key="btn_reset_regularized_series",
+                    use_container_width=True,
+                ):
                     st.session_state["model_series"] = series
                     st.session_state["model_base_series"] = series
                     st.session_state["transform_info"] = {
@@ -486,8 +542,14 @@ def render_eda_tab() -> None:
                         "suggested_D": 0,
                         "seasonal_period": None,
                     }
+                    st.session_state["model_results"] = {}
+                    st.session_state["forecast_results"] = {}
+                    st.session_state["_pending_tf_reset"] = True
                     reset_model_widgets()
-                    st.toast("Reset active modeling series to original data.", icon="🔄")
+                    st.session_state["tf_status_msg"] = (
+                        "info",
+                        "Active modeling series and transformation controls have been reset to original regularized data.",
+                    )
                     st.rerun()
 
         except Exception as exc:
