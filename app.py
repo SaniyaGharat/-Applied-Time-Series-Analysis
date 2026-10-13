@@ -68,6 +68,23 @@ def main() -> None:
     )
 
     init_session_state()
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background: linear-gradient(180deg, #b8daf5 0%, #9bc5e8 50%, #85b6dd 100%) !important;
+            background-attachment: fixed !important;
+        }
+        [data-testid="stSidebar"] {
+            background-color: #cfe6f9 !important;
+        }
+        [data-testid="stHeader"] {
+            background-color: rgba(0, 0, 0, 0) !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     render_sidebar()
 
     st.title("📈 Applied Time Series Analysis")
