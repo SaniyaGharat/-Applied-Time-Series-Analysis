@@ -278,10 +278,18 @@ def render_forecast_tab() -> None:
             show_bands_for=None if selected_band_model == "None" else selected_band_model,
         )
         st.plotly_chart(fig_overlay, width="stretch")
+        st.caption(
+            "💡 **Explanation**: Overlays holdout forecasts from selected candidate models against actual observed ground truth (black dashed line). "
+            "Allows direct visual inspection of which models capture turning points, peaks, and troughs most accurately."
+        )
 
     with tab_metrics:
         fig_metric = plot_metric_bars(comp_df, metric=rank_metric)
         st.plotly_chart(fig_metric, width="stretch")
+        st.caption(
+            f"💡 **Explanation**: Ranks candidate models on holdout evaluation performance by {rank_metric}. "
+            "Lower bars indicate smaller forecast errors and superior predictive accuracy (except for Coverage95 where ~0.95 indicates well-calibrated intervals)."
+        )
 
     with tab_bj:
         bj_models = [r for r in selected_models if getattr(r, "family", "") in ("ar", "ma", "arma", "arima", "sarima")]
@@ -295,6 +303,10 @@ def render_forecast_tab() -> None:
             )
             fig_bj_bar = plot_single_dataset_arima_bars(bj_models, metric=bj_met_choice)
             st.plotly_chart(fig_bj_bar, width="stretch")
+            st.caption(
+                f"💡 **Explanation**: Evaluates classical Box-Jenkins specifications (AR, MA, ARMA, ARIMA, SARIMA) under {bj_met_choice}. "
+                "Shows whether adding differencing or moving average terms improves performance over pure autoregression."
+            )
 
             actual_holdout = ts_series.iloc[-holdout_size:]
             bj_fc_dict = {
@@ -306,12 +318,19 @@ def render_forecast_tab() -> None:
                 fig_bj_ov = plot_forecast_overlay(actual=actual_holdout, forecasts=bj_fc_dict)
                 fig_bj_ov.update_layout(title="Box-Jenkins Models vs Holdout Ground Truth")
                 st.plotly_chart(fig_bj_ov, width="stretch")
+                st.caption(
+                    "💡 **Explanation**: Visual comparison of Box-Jenkins model trajectories against actual holdout ground truth."
+                )
         else:
             st.info("No Box-Jenkins models (AR, MA, ARMA, ARIMA, SARIMA) have been fitted yet. Please fit baseline/ARIMA models in the Models tab.")
 
     with tab_ic:
         fig_ic = plot_ic_bars(comp_df)
         st.plotly_chart(fig_ic, width="stretch")
+        st.caption(
+            "💡 **Explanation**: In-sample Information Criteria (AIC, AICc, BIC) across models. "
+            "Lower scores reflect a superior balance of goodness-of-fit and model simplicity, penalizing overparameterized models."
+        )
 
     with tab_error:
         err_dict = {}
@@ -323,6 +342,10 @@ def render_forecast_tab() -> None:
                 err_dict[r.label] = pd.Series(act.values - r.test_forecast["mean"].values, index=act.index)
         fig_err = plot_error_by_horizon(err_dict)
         st.plotly_chart(fig_err, width="stretch")
+        st.caption(
+            r"💡 **Explanation**: Forecast error ($y_t - \hat{y}_t$) across forecast steps (horizon $h=1, 2, \dots, H$). "
+            "Shows whether prediction error compounds rapidly or exhibits systematic directional bias over longer horizons."
+        )
 
     with tab_sig:
         st.markdown("##### Pairwise Diebold-Mariano Test")
@@ -552,6 +575,10 @@ def render_forecast_tab() -> None:
                         )
 
         st.plotly_chart(fig_future, width="stretch")
+        st.caption(
+            "💡 **Explanation**: Out-of-sample forward projection generated after retraining on 100% of historical observations. "
+            "The shaded envelope represents the 95% prediction interval; widening bands reflect compounding forecast uncertainty into the future."
+        )
 
         # Future forecast values table
         st.markdown("##### 📋 Future Forecast Values (with 95% Confidence Intervals)")

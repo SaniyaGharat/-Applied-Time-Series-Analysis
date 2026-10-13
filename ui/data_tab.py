@@ -507,6 +507,11 @@ def render_data_tab() -> None:
             show_rangeslider=True,
         )
         st.plotly_chart(fig, width="stretch")
+        st.caption(
+            "💡 **Explanation**: Displays the historical trajectory of the cleaned and regularized time series. "
+            "Use the interactive range slider below the chart to zoom into specific time horizons, identify long-term trends, "
+            "structural shifts, or recurring seasonal fluctuations."
+        )
 
     with tab_table:
         st.markdown("#### Cleaned & Regularized Series (First 100 Observations)")

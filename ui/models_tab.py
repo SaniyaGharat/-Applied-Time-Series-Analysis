@@ -425,9 +425,17 @@ def render_models_tab() -> None:
             title=f"{result.label} (In-Sample Fit & Out-of-Sample Holdout)",
         )
         st.plotly_chart(fig_fit, width="stretch", key=f"plot_fit_vs_actual_{selected_family}_{result.key}")
+        st.caption(
+            "💡 **Explanation**: Compares actual historical data against in-sample fitted values (training period) and out-of-sample holdout forecasts (test period). "
+            "The shaded band represents the 95% prediction interval. Look for close tracking of historical fluctuations and realistic uncertainty bounds."
+        )
 
         fig_zoom = plot_holdout_zoom(actual=ts_series, forecast_df=result.test_forecast)
         st.plotly_chart(fig_zoom, width="stretch", key=f"plot_holdout_zoom_{selected_family}_{result.key}")
+        st.caption(
+            "💡 **Explanation**: Magnified view of the out-of-sample holdout evaluation window. "
+            "Highlights how well the forecast trajectory tracks ground truth turning points and whether actuals stay within the 95% confidence interval."
+        )
 
         st.markdown("##### 📄 Holdout Comparison Table")
         test_actual = ts_series.reindex(result.test_forecast.index)
@@ -455,6 +463,11 @@ def render_models_tab() -> None:
         if not result.residuals.empty:
             fig_resid = plot_residual_diagnostics(result.residuals)
             st.plotly_chart(fig_resid, width="stretch", key=f"plot_residual_diag_{selected_family}_{result.key}")
+            st.caption(
+                "💡 **Explanation**: 4-panel residual validation: (1) Standardized residuals should display random variation around zero without patterns; "
+                "(2) Histogram/KDE should follow the standard normal curve $N(0, 1)$; (3) Normal Q-Q points should lie on the red 45° line; "
+                "(4) Residual ACF spikes should remain inside the 95% confidence bounds, confirming absence of remaining autocorrelation (white noise)."
+            )
 
             d_col1, d_col2 = st.columns(2)
             with d_col1:
@@ -509,8 +522,8 @@ def render_models_tab() -> None:
             )
             st.plotly_chart(fig_comb, width="stretch", key=f"plot_acf_pacf_ident_{selected_family}_{result.key}")
             st.caption(
-                f"Contiguous suggestions on d={d_val}, D={D_val}: Suggested p={sugg_orders['suggested_p']}, "
-                f"Suggested q={sugg_orders['suggested_q']} | Active model fitted: p={spec.get('p')}, q={spec.get('q')}"
+                f"💡 **Explanation**: ACF and PACF calculated on the differenced base series (d={d_val}, D={D_val}) to guide Box-Jenkins order selection. "
+                f"Contiguous suggestions: p={sugg_orders['suggested_p']}, q={sugg_orders['suggested_q']} | Active model fitted: p={spec.get('p')}, q={spec.get('q')}."
             )
 
             # 2. Inverse Roots
@@ -520,6 +533,11 @@ def render_models_tab() -> None:
             ma_r = result.extras.get("ma_roots")
             fig_roots = plot_inverse_roots(ar_r, ma_r)
             st.plotly_chart(fig_roots, width="stretch", key=f"plot_inverse_roots_{selected_family}_{result.key}")
+            st.caption(
+                "💡 **Explanation**: Complex plane display of inverse AR (blue) and MA (orange) polynomial roots. "
+                "For stationarity and invertibility, all inverse roots must lie strictly inside the unit circle ($|1/r| < 1$). "
+                "Roots lying on or outside the circle indicate model instability or non-invertibility."
+            )
 
             ar_stable = True
             if ar_r is not None and len(ar_r) > 0:
@@ -550,6 +568,10 @@ def render_models_tab() -> None:
                         c_res["lags"], c_res["acf"], c_res["pacf"], t_acf, t_pacf, c_res["conf_bound"]
                     )
                     st.plotly_chart(fig_theo, width="stretch", key=f"plot_theoretical_vs_empirical_{selected_family}_{result.key}")
+                    st.caption(
+                        "💡 **Explanation**: Compares theoretical ACF/PACF implied by the fitted ARMA parameters (red markers) against sample empirical autocorrelations (bars). "
+                        "Close agreement confirms that the estimated model accurately reproduces the observed correlation structure."
+                    )
                 else:
                     st.info("Theoretical ACF/PACF cannot be calculated for non-stationary AR polynomial.")
             else:
@@ -565,10 +587,18 @@ def render_models_tab() -> None:
                         {"Feature": list(ex_coefs.keys()), "Coefficient": list(ex_coefs.values())}
                     )
                     st.bar_chart(exog_df_plot.set_index("Feature"))
+                    st.caption(
+                        r"💡 **Explanation**: Estimated regression coefficients ($\beta$) for exogenous predictors. "
+                        "Positive coefficients signify an expected positive response in the target; negative coefficients indicate an inverse relationship."
+                    )
 
         elif selected_family == "holt_winters":
             fig_hw = plot_hw_components(result.extras, result.train_index)
             st.plotly_chart(fig_hw, width="stretch", key=f"plot_hw_components_{selected_family}_{result.key}")
+            st.caption(
+                r"💡 **Explanation**: Internal exponential smoothing states over time: Level ($\ell_t$), Trend ($b_t$), and Seasonal ($s_t$) components. "
+                "Shows how the smoothing equations adapted to the evolving series dynamics."
+            )
 
             st.markdown("##### Smoothing Hyperparameters")
             sm = result.extras.get("smoothing", {})
@@ -658,6 +688,10 @@ def render_models_tab() -> None:
 
                 fig_grid = plot_grid_results(grid_df, top_n=15)
                 st.plotly_chart(fig_grid, width="stretch", key=f"plot_grid_results_{selected_family}")
+                st.caption(
+                    f"💡 **Explanation**: Top 15 hyperparameter specifications ranked by {best_info['criterion'].upper()}. "
+                    "Lower scores denote superior trade-off between model fit and parsimony or smaller holdout error."
+                )
 
                 st.dataframe(grid_df.drop(columns=["spec_dict"]).head(20), width="stretch")
 

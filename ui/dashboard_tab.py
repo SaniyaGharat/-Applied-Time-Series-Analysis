@@ -136,6 +136,10 @@ def render_dashboard_tab() -> None:
     st.markdown("#### 1. Indexed Growth Overlay (Base = 100)")
     fig_indexed = plot_indexed_overlay(bundle_a.series, bundle_b.series, names=(bundle_a.name, bundle_b.name))
     st.plotly_chart(fig_indexed, use_container_width=True, key="dash_chart_indexed")
+    st.caption(
+        "💡 **Explanation**: Normalized growth comparison with both series rebased to 100 at time $t=0$. "
+        "Enables scale-independent comparison of overall trajectory, percentage growth, and volatility across datasets with different units."
+    )
 
     # Chart 2 & 3: Grouped Bars and Strength Bars Side-by-Side
     g_col1, g_col2 = st.columns(2)
@@ -143,6 +147,10 @@ def render_dashboard_tab() -> None:
         st.markdown("#### 2. Accuracy Comparison (Lower is Better)")
         fig_grouped = plot_kpi_grouped_bars(kpi_df, names=(bundle_a.name, bundle_b.name))
         st.plotly_chart(fig_grouped, use_container_width=True, key="dash_chart_grouped")
+        st.caption(
+            "💡 **Explanation**: Comparative holdout performance across scale-free metrics (MASE, sMAPE, RelRMSE). "
+            "Values below 1.0 indicate performance superior to the naive persistence benchmark."
+        )
 
     with g_col2:
         st.markdown("#### 3. Component Strengths (Hyndman Metrics)")
@@ -154,11 +162,19 @@ def render_dashboard_tab() -> None:
             names=(bundle_a.name, bundle_b.name),
         )
         st.plotly_chart(fig_strengths, use_container_width=True, key="dash_chart_strengths")
+        st.caption(
+            "💡 **Explanation**: Hyndman decomposition metrics comparing relative Trend Strength ($F_T$) and Seasonal Strength ($F_S$) "
+            "between both series on a normalized scale from 0 (none) to 1 (dominant)."
+        )
 
     # Chart 4: Box-Jenkins Zoo Multi-Metric Comparison
     st.markdown("#### 4. Box-Jenkins Zoo Evaluation (AR, MA, ARMA, ARIMA, SARIMA)")
     fig_bj = plot_arima_multi_metric_bars(bundle_a, bundle_b, names=(bundle_a.name, bundle_b.name))
     st.plotly_chart(fig_bj, use_container_width=True, key="dash_chart_arima_family")
+    st.caption(
+        "💡 **Explanation**: Multi-metric overview (MASE, sMAPE, AIC) comparing Box-Jenkins model families "
+        "(AR, MA, ARMA, ARIMA, SARIMA) head-to-head across both datasets."
+    )
 
     # Chart 5: Side-by-Side Future Forecasts
     st.markdown("#### 5. Out-of-Sample Forward Projections")
@@ -168,6 +184,9 @@ def render_dashboard_tab() -> None:
         if bundle_a.future and bundle_a.future.df is not None and not bundle_a.future.df.empty:
             fig_fa = plot_future_forecast(bundle_a.series, bundle_a.future.df, label=bundle_a.future.label)
             st.plotly_chart(fig_fa, use_container_width=True, key="dash_chart_future_a")
+            st.caption(
+                f"💡 **Explanation**: Forward projection with 95% prediction interval for {bundle_a.name} using {bundle_a.future.label}."
+            )
         else:
             st.info("Dataset A forecast projection not available.")
 
@@ -176,6 +195,9 @@ def render_dashboard_tab() -> None:
         if bundle_b.future and bundle_b.future.df is not None and not bundle_b.future.df.empty:
             fig_fb = plot_future_forecast(bundle_b.series, bundle_b.future.df, label=bundle_b.future.label)
             st.plotly_chart(fig_fb, use_container_width=True, key="dash_chart_future_b")
+            st.caption(
+                f"💡 **Explanation**: Forward projection with 95% prediction interval for {bundle_b.name} using {bundle_b.future.label}."
+            )
         else:
             st.info("Dataset B forecast projection not available.")
 

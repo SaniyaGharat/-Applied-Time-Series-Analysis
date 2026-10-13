@@ -350,11 +350,13 @@ def render_compare_tab() -> None:
     def _sec1_a():
         fig = plot_time_series(b_a.series, title=f"{b_a.name} ({b_a.freq_label})", show_rangeslider=False)
         st.plotly_chart(fig, use_container_width=True, key="cmp_ts_plot_a")
+        st.caption(f"💡 **Explanation**: Historical trajectory and evolution of {b_a.name}.")
         st.dataframe(b_a.series.describe().to_frame(name=b_a.name), use_container_width=True)
 
     def _sec1_b():
         fig = plot_time_series(b_b.series, title=f"{b_b.name} ({b_b.freq_label})", show_rangeslider=False)
         st.plotly_chart(fig, use_container_width=True, key="cmp_ts_plot_b")
+        st.caption(f"💡 **Explanation**: Historical trajectory and evolution of {b_b.name}.")
         st.dataframe(b_b.series.describe().to_frame(name=b_b.name), use_container_width=True)
 
     render_dual_section(
@@ -369,6 +371,10 @@ def render_compare_tab() -> None:
     st.markdown("#### 📈 Indexed Growth Comparison (Base = 100)")
     fig_idx = plot_indexed_overlay(b_a.series, b_b.series, names=(b_a.name, b_b.name))
     st.plotly_chart(fig_idx, use_container_width=True, key="cmp_indexed_growth_plot")
+    st.caption(
+        "💡 **Explanation**: Indexed growth comparison rebased to 100 at series start ($t=0$). "
+        "Enables scale-free evaluation of relative growth trajectories, drift, and volatility."
+    )
     st.markdown("---")
 
     # =========================================================================
@@ -407,6 +413,10 @@ def render_compare_tab() -> None:
         if data and "acf" in data and "pacf" in data:
             fig = plot_acf_pacf_combined(data["lags"], data["acf"], data["pacf"], data["conf_bound"])
             st.plotly_chart(fig, use_container_width=True, key=f"cmp_acf_plot_{slot}")
+            st.caption(
+                f"💡 **Explanation**: ACF and PACF for {bundle.name} computed on differenced series (d={bundle.suggested_d}, D={bundle.suggested_D}) "
+                "to guide Box-Jenkins AR ($p$) and MA ($q$) order selection."
+            )
         else:
             st.info("ACF/PACF data not available.")
 
@@ -433,6 +443,9 @@ def render_compare_tab() -> None:
                 if not decomp_fig_data.get("error"):
                     fig = plot_decomposition(decomp_fig_data)
                     st.plotly_chart(fig, use_container_width=True, key=f"cmp_decomp_plot_{slot}")
+                    st.caption(
+                        f"💡 **Explanation**: Decomposed Trend, Seasonal, and Residual components for {bundle.name}."
+                    )
             except Exception:
                 pass
 
@@ -483,12 +496,22 @@ def render_compare_tab() -> None:
         if bj_plot_mode == "📊 3-Metric Overview Panel (MASE, sMAPE, AIC)":
             fig_multi = plot_arima_multi_metric_bars(b_a, b_b, names=(b_a.name, b_b.name))
             st.plotly_chart(fig_multi, use_container_width=True, key="cmp_bj_multi_metric_plot")
+            st.caption(
+                "💡 **Explanation**: Multi-metric evaluation panel comparing Box-Jenkins families (AR, MA, ARMA, ARIMA, SARIMA) "
+                "across MASE, sMAPE, and AIC on both datasets."
+            )
         elif bj_plot_mode == "📈 Stacked Holdout Forecast Trajectories":
             fig_dual_ov = plot_arima_dual_overlay(b_a, b_b, names=(b_a.name, b_b.name))
             st.plotly_chart(fig_dual_ov, use_container_width=True, key="cmp_bj_dual_overlay_plot")
+            st.caption(
+                "💡 **Explanation**: Stacked panels displaying holdout forecast paths of Box-Jenkins specifications against actual test observations for each dataset."
+            )
         elif bj_plot_mode == "🕸️ Relative Accuracy Radar":
             fig_radar = plot_arima_radar(b_a, b_b, names=(b_a.name, b_b.name))
             st.plotly_chart(fig_radar, use_container_width=True, key="cmp_bj_radar_plot")
+            st.caption(
+                "💡 **Explanation**: Radar chart visualizing comparative holdout error metrics across model architectures; smaller areas indicate superior overall precision."
+            )
         else:
             metric_choice = st.radio(
                 "Comparative Metric for Focus Chart:",
@@ -499,6 +522,9 @@ def render_compare_tab() -> None:
             metric_key = "MASE" if "MASE" in metric_choice else ("sMAPE" if "sMAPE" in metric_choice else "AIC")
             fig_bj_bars = plot_arima_family_bars(b_a, b_b, metric=metric_key, names=(b_a.name, b_b.name))
             st.plotly_chart(fig_bj_bars, use_container_width=True, key="cmp_bj_bars_plot")
+            st.caption(
+                f"💡 **Explanation**: Focus bar chart comparing {metric_key} across Box-Jenkins model families for each dataset."
+            )
         st.markdown("---")
     else:
         def _render_leaderboard(bundle: AnalysisBundle):
@@ -577,6 +603,9 @@ def render_compare_tab() -> None:
                     key=f"cmp_overlay_plot_{slot}_{suffix}",
                     config={"displayModeBar": "hover", "displaylogo": False},
                 )
+                st.caption(
+                    f"💡 **Explanation**: Out-of-sample holdout forecasts versus actual ground truth for {bundle.name}, highlighting turning-point tracking."
+                )
             else:
                 st.info("Holdout forecasts not available.")
         else:
@@ -605,6 +634,9 @@ def render_compare_tab() -> None:
         if bundle.future and bundle.future.df is not None and not bundle.future.df.empty:
             fig = plot_future_forecast(bundle.series, bundle.future.df, label=bundle.future.label)
             st.plotly_chart(fig, use_container_width=True, key=f"cmp_future_plot_{slot}")
+            st.caption(
+                f"💡 **Explanation**: Future multi-step projection with 95% confidence intervals for {bundle.name} using its top model ({bundle.future.label})."
+            )
         else:
             st.info("Future forecast projection not available.")
 

@@ -214,6 +214,10 @@ def render_eda_tab() -> None:
         r_df = rolling_stats(series, window=roll_window)
         roll_fig = plot_rolling_stats(series, r_df, window=roll_window)
         st.plotly_chart(roll_fig, width="stretch")
+        st.caption(
+            "💡 **Explanation**: Tracks the moving average (level) and moving standard deviation (volatility) over time. "
+            "A stationary series exhibits a relatively constant rolling mean and variance without drifting trends or expanding spreads."
+        )
 
     # -------------------------------------------------------------
     # TAB 2: ACF / PACF
@@ -257,6 +261,11 @@ def render_eda_tab() -> None:
                     bar_color="#2563eb",
                 )
                 st.plotly_chart(fig_acf, width="stretch")
+                st.caption(
+                    "💡 **Explanation**: Autocorrelation Function (ACF) measures total linear correlation between observations separated by lag $k$. "
+                    "Spikes outside the shaded bounds indicate statistically significant autocorrelation. Slow geometric decay suggests non-stationarity, "
+                    "while a sharp cutoff after lag $q$ suggests an MA($q$) process."
+                )
 
             with col_pacf:
                 fig_pacf = plot_stem_correlation(
@@ -268,6 +277,10 @@ def render_eda_tab() -> None:
                     bar_color="#7c3aed",
                 )
                 st.plotly_chart(fig_pacf, width="stretch")
+                st.caption(
+                    "💡 **Explanation**: Partial Autocorrelation Function (PACF) measures direct correlation between $y_t$ and $y_{t-k}$ after controlling for intermediate lags. "
+                    "A sharp cutoff after lag $p$ suggests an AR($p$) process, while significant spikes at seasonal intervals indicate seasonal autoregression."
+                )
 
             # Order suggestions hint box
             suggestions = suggest_orders(acf_vals, pacf_vals, conf_bound, m=inferred_m)
@@ -349,6 +362,10 @@ def render_eda_tab() -> None:
 
                 decomp_fig = plot_decomposition(decomp_res)
                 st.plotly_chart(decomp_fig, width="stretch")
+                st.caption(
+                    "💡 **Explanation**: Deconstructs the series into Observed, Trend-Cycle, Repeating Seasonal, and Residual components. "
+                    "High trend ($F_T$) or seasonal ($F_S$) strength indicates strong structural patterns. Residuals should ideally resemble mean-zero white noise."
+                )
 
         except Exception as exc:
             st.error(f"Error executing decomposition: {exc}")
@@ -460,6 +477,9 @@ def render_eda_tab() -> None:
             with c_comp1:
                 fig_orig = plot_time_series(series, title="Original Series", line_color="#64748b")
                 st.plotly_chart(fig_orig, width="stretch")
+                st.caption(
+                    "💡 **Explanation**: Raw regularized series before variance stabilization or differencing."
+                )
             with c_comp2:
                 fig_trans = plot_time_series(
                     transformed_s,
@@ -467,6 +487,10 @@ def render_eda_tab() -> None:
                     line_color="#059669",
                 )
                 st.plotly_chart(fig_trans, width="stretch")
+                st.caption(
+                    "💡 **Explanation**: Series after variance transformation (Log/Box-Cox) and regular/seasonal differencing ($d, D$). "
+                    "Aim for stable variance and fluctuation around a constant zero mean."
+                )
 
             # Stationarity re-check on Transformed Series
             st.markdown("#### Stationarity Verification on Transformed Series")
@@ -490,6 +514,9 @@ def render_eda_tab() -> None:
                 tf_acf_res["conf_bound"],
             )
             st.plotly_chart(tf_combined_fig, width="stretch")
+            st.caption(
+                "💡 **Explanation**: ACF and PACF computed on the transformed series to guide candidate Box-Jenkins AR ($p$) and MA ($q$) orders."
+            )
 
             # Action Buttons to set or reset model series
             btn_col1, btn_col2 = st.columns(2)
@@ -574,6 +601,10 @@ def render_eda_tab() -> None:
             seas_df = seasonal_subseries(series, period=int(sub_period))
             box_fig = plot_seasonal_box(seas_df, period_name=f"Period = {sub_period}")
             st.plotly_chart(box_fig, width="stretch")
+            st.caption(
+                "💡 **Explanation**: Shows the distribution of values across each sub-period of the seasonal cycle. "
+                "Differing median levels across periods confirm seasonal shifts, while differing box heights indicate seasonal volatility changes."
+            )
         except Exception as exc:
             st.error(f"Error rendering seasonal box plot: {exc}")
 
@@ -583,12 +614,20 @@ def render_eda_tab() -> None:
         selected_lag = st.slider("Lag Order (k):", min_value=1, max_value=min(24, len(series) // 2), value=1)
         lag_fig = plot_lag(series, lag=selected_lag)
         st.plotly_chart(lag_fig, width="stretch")
+        st.caption(
+            f"💡 **Explanation**: Scatter plot of $y_t$ versus $y_{{t-{selected_lag}}}$. Tight alignment along the 45° diagonal confirms strong positive autocorrelation at lag {selected_lag}, "
+            "whereas a diffuse circular cloud indicates little to no serial dependence."
+        )
 
         # 3. Distribution & Q-Q Plot
         st.markdown("---")
         st.markdown("#### Distribution & Normality Inspection")
         dist_fig = plot_distribution_and_qq(series)
         st.plotly_chart(dist_fig, width="stretch")
+        st.caption(
+            "💡 **Explanation**: Assesses distributional properties and normality. The histogram and KDE (left) reveal skewness and modality, "
+            "while the Normal Q-Q plot (right) compares empirical quantiles to a theoretical normal distribution (points adhering to the red 45° line indicate normality)."
+        )
 
         # 4. Ljung-Box Test
         st.markdown("---")
