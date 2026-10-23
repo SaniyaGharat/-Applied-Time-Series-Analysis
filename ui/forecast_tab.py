@@ -75,16 +75,16 @@ def render_forecast_tab() -> None:
 
     # 1. Precondition checks
     if ts_series is None or len(ts_series) == 0:
-        st.info("ℹ️ No time series dataset is loaded yet. Please load or upload data in the 📥 Data tab.")
+        st.info("No time series dataset is loaded yet. Please load or upload data in the Data tab.")
         return
 
     if model_base_series is None or len(model_base_series) == 0:
-        st.info("ℹ️ Modeling base series is not set. Please review the dataset in the 📥 Data tab.")
+        st.info("Modeling base series is not set. Please review the dataset in the Data tab.")
         return
 
     n = len(model_base_series)
     if n < 30:
-        st.warning(f"⚠️ The loaded time series has only {n} observations. At least 30 observations are required.")
+        st.warning(f"The loaded time series has only {n} observations. At least 30 observations are required.")
         return
 
     inferred_m = transform_info.get("seasonal_period") or infer_period_from_frequency(ts_series) or 12
@@ -97,15 +97,15 @@ def render_forecast_tab() -> None:
 
     model_results = st.session_state.get("model_results", {})
 
-    st.markdown("### 🔮 Forecast & Model Comparison Workspace")
+    st.markdown("### Forecast & Model Comparison Workspace")
 
     # Check if models have been estimated
     if not model_results:
         st.info(
-            "ℹ️ No models have been estimated yet in the session. You can fit individual models in the "
-            "**🧮 Models** tab or click the button below to automatically estimate all standard models now."
+            "No models have been estimated yet in the session. You can fit individual models in the "
+            "**Models** tab or click the button below to automatically estimate all standard models now."
         )
-        if st.button("🚀 Fit all default models", key="fc_fit_all_btn", width="stretch"):
+        if st.button("Fit all default models", key="fc_fit_all_btn", width="stretch"):
             with st.spinner("Fitting all candidate model families..."):
                 fit_all_default_models(
                     model_base_series=model_base_series,
@@ -131,10 +131,10 @@ def render_forecast_tab() -> None:
 
     if not eligible_models:
         st.info(
-            f"ℹ️ Currently fitted models were estimated with a different holdout size than the active "
-            f"setting ({holdout_size}). Please fit models in the **🧮 Models** tab or fit all defaults below."
+            f"Currently fitted models were estimated with a different holdout size than the active "
+            f"setting ({holdout_size}). Please fit models in the **Models** tab or fit all defaults below."
         )
-        if st.button("🚀 Refit all default models to current holdout", key="fc_refit_all_btn", width="stretch"):
+        if st.button("Refit all default models to current holdout", key="fc_refit_all_btn", width="stretch"):
             with st.spinner("Refitting all candidate models..."):
                 fit_all_default_models(
                     model_base_series=model_base_series,
@@ -204,21 +204,18 @@ def render_forecast_tab() -> None:
         if rel_rmse < 1.0:
             pct_improvement = (1.0 - rel_rmse) * 100.0
             st.success(
-                f"🏆 **Top Performer**: **{best_label}** achieves the lowest {rank_metric} (**{fmt_best_val}**). "
-                f"It outperforms the Naive baseline by **{pct_improvement:.1f}%** (RelRMSE = **{rel_rmse:.3f}**).",
-                icon="✅",
+                f"**Top Performer**: **{best_label}** achieves the lowest {rank_metric} (**{fmt_best_val}**). "
+                f"It outperforms the Naive baseline by **{pct_improvement:.1f}%** (RelRMSE = **{rel_rmse:.3f}**)."
             )
         else:
             st.warning(
-                f"⚠️ **Top Performer**: **{best_label}** achieves the lowest {rank_metric} (**{fmt_best_val}**), "
-                f"but does **not** beat the Naive benchmark (RelRMSE = **{rel_rmse:.3f}**).",
-                icon="⚠️",
+                f"**Top Performer**: **{best_label}** achieves the lowest {rank_metric} (**{fmt_best_val}**), "
+                f"but does **not** beat the Naive benchmark (RelRMSE = **{rel_rmse:.3f}**)."
             )
     else:
         st.info(
-            f"🏆 **Top Performer**: **{best_label}** achieves the lowest {rank_metric} (**{fmt_best_val}**). "
-            f"*(Fit a Naive baseline to evaluate relative percentage improvement).* ",
-            icon="ℹ️",
+            f"**Top Performer**: **{best_label}** achieves the lowest {rank_metric} (**{fmt_best_val}**). "
+            f"*(Fit a Naive baseline to evaluate relative percentage improvement).* "
         )
 
     # Styled Leaderboard Table
@@ -250,7 +247,7 @@ def render_forecast_tab() -> None:
 
     st.dataframe(styled_table, width="stretch")
     st.caption(
-        "📌 **Diagnostic & Comparison Notes**: "
+        "**Diagnostic & Comparison Notes**: "
         "AIC and BIC are strictly comparable **only within the same IC_group** and never across ARIMA-class vs ETS models. "
         "MAPE is unstable and unreliable if values are near zero. "
         f"A {holdout_size}-point holdout constitutes a small validation sample. "
@@ -259,7 +256,7 @@ def render_forecast_tab() -> None:
 
     # Comparison Visualizations Tabs
     tab_overlay, tab_metrics, tab_bj, tab_ic, tab_error, tab_sig = st.tabs(
-        ["📈 Forecast Overlay", "📊 Metric Bars", "🎯 Box-Jenkins Zoo", "🏛️ Information Criteria", "📉 Error by Horizon", "🔬 Statistical Significance"]
+        ["Forecast Overlay", "Metric Bars", "Box-Jenkins Zoo", "Information Criteria", "Error by Horizon", "Statistical Significance"]
     )
 
     with tab_overlay:
@@ -279,7 +276,7 @@ def render_forecast_tab() -> None:
         )
         st.plotly_chart(fig_overlay, width="stretch")
         st.caption(
-            "💡 **Explanation**: Overlays holdout forecasts from selected candidate models against actual observed ground truth (black dashed line). "
+            "**Explanation**: Overlays holdout forecasts from selected candidate models against actual observed ground truth (black dashed line). "
             "Allows direct visual inspection of which models capture turning points, peaks, and troughs most accurately."
         )
 
@@ -287,14 +284,14 @@ def render_forecast_tab() -> None:
         fig_metric = plot_metric_bars(comp_df, metric=rank_metric)
         st.plotly_chart(fig_metric, width="stretch")
         st.caption(
-            f"💡 **Explanation**: Ranks candidate models on holdout evaluation performance by {rank_metric}. "
+            f"**Explanation**: Ranks candidate models on holdout evaluation performance by {rank_metric}. "
             "Lower bars indicate smaller forecast errors and superior predictive accuracy (except for Coverage95 where ~0.95 indicates well-calibrated intervals)."
         )
 
     with tab_bj:
         bj_models = [r for r in selected_models if getattr(r, "family", "") in ("ar", "ma", "arma", "arima", "sarima")]
         if bj_models:
-            st.markdown("##### 🏛️ Classical Box-Jenkins Architecture Comparison (AR, MA, ARMA, ARIMA, SARIMA)")
+            st.markdown("##### Classical Box-Jenkins Architecture Comparison (AR, MA, ARMA, ARIMA, SARIMA)")
             bj_met_choice = st.radio(
                 "Metric for Box-Jenkins Comparison:",
                 ["MASE", "sMAPE", "AIC"],
@@ -304,7 +301,7 @@ def render_forecast_tab() -> None:
             fig_bj_bar = plot_single_dataset_arima_bars(bj_models, metric=bj_met_choice)
             st.plotly_chart(fig_bj_bar, width="stretch")
             st.caption(
-                f"💡 **Explanation**: Evaluates classical Box-Jenkins specifications (AR, MA, ARMA, ARIMA, SARIMA) under {bj_met_choice}. "
+                f"**Explanation**: Evaluates classical Box-Jenkins specifications (AR, MA, ARMA, ARIMA, SARIMA) under {bj_met_choice}. "
                 "Shows whether adding differencing or moving average terms improves performance over pure autoregression."
             )
 
@@ -319,7 +316,7 @@ def render_forecast_tab() -> None:
                 fig_bj_ov.update_layout(title="Box-Jenkins Models vs Holdout Ground Truth")
                 st.plotly_chart(fig_bj_ov, width="stretch")
                 st.caption(
-                    "💡 **Explanation**: Visual comparison of Box-Jenkins model trajectories against actual holdout ground truth."
+                    "**Explanation**: Visual comparison of Box-Jenkins model trajectories against actual holdout ground truth."
                 )
         else:
             st.info("No Box-Jenkins models (AR, MA, ARMA, ARIMA, SARIMA) have been fitted yet. Please fit baseline/ARIMA models in the Models tab.")
@@ -328,7 +325,7 @@ def render_forecast_tab() -> None:
         fig_ic = plot_ic_bars(comp_df)
         st.plotly_chart(fig_ic, width="stretch")
         st.caption(
-            "💡 **Explanation**: In-sample Information Criteria (AIC, AICc, BIC) across models. "
+            "**Explanation**: In-sample Information Criteria (AIC, AICc, BIC) across models. "
             "Lower scores reflect a superior balance of goodness-of-fit and model simplicity, penalizing overparameterized models."
         )
 
@@ -343,7 +340,7 @@ def render_forecast_tab() -> None:
         fig_err = plot_error_by_horizon(err_dict)
         st.plotly_chart(fig_err, width="stretch")
         st.caption(
-            r"💡 **Explanation**: Forecast error ($y_t - \hat{y}_t$) across forecast steps (horizon $h=1, 2, \dots, H$). "
+            r"**Explanation**: Forecast error ($y_t - \hat{y}_t$) across forecast steps (horizon $h=1, 2, \dots, H$). "
             "Shows whether prediction error compounds rapidly or exhibits systematic directional bias over longer horizons."
         )
 
@@ -364,13 +361,13 @@ def render_forecast_tab() -> None:
         dm_df = pairwise_dm(selected_models, reference_key=ref_key, power=dm_power)
         if not dm_df.empty:
             st.dataframe(dm_df, width="stretch")
-            st.caption("ℹ️ *Note: Indicative only: single forecast origin, small holdout, low power.*")
+            st.caption("*Note: Indicative only: single forecast origin, small holdout, low power.*")
         else:
             st.info("No comparative Diebold-Mariano statistics could be computed.")
 
     # CSV Download for Comparison Table
     st.download_button(
-        label="📥 Download Comparison Table (CSV)",
+        label="Download Comparison Table (CSV)",
         data=comp_df.to_csv(index=False).encode("utf-8"),
         file_name="atsa_model_comparison_leaderboard.csv",
         mime="text/csv",
@@ -403,7 +400,7 @@ def render_forecast_tab() -> None:
         def_h = min(max_h, max(1, int(active_m or 12)))
         steps_ahead = st.number_input("Forecast Horizon (Steps Ahead):", min_value=1, max_value=max_h, value=def_h, step=1, key="future_horizon_input")
         if steps_ahead > 2 * holdout_size:
-            st.warning("⚠️ Horizon > 2x holdout size: uncertainty grows rapidly and intervals widen.")
+            st.warning("Horizon > 2x holdout size: uncertainty grows rapidly and intervals widen.")
 
     with f_col3:
         # Multi-model overlay option
@@ -413,8 +410,8 @@ def render_forecast_tab() -> None:
     # Exogenous Regressor Handling for SARIMAX
     future_exog_df: Optional[pd.DataFrame] = None
     if chosen_result.family == "sarimax":
-        st.markdown("##### 🌐 Future Exogenous Regressors Configuration")
-        st.warning("⚠️ **Forecast depends on YOUR assumptions for future exogenous values.**")
+        st.markdown("##### Future Exogenous Regressors Configuration")
+        st.warning("**Forecast depends on YOUR assumptions for future exogenous values.**")
 
         if exog_df is None or exog_df.empty:
             st.error("SARIMAX requires exogenous features, but none are selected in the Data tab.")
@@ -467,14 +464,14 @@ def render_forecast_tab() -> None:
                     return
 
         except Exception as exog_err:
-            st.error(f"❌ Exogenous validation error: {exog_err}")
+            st.error(f"Exogenous validation error: {exog_err}")
             return
 
     # Generate Forecast Execution
     if "forecast_results" not in st.session_state:
         st.session_state["forecast_results"] = {}
 
-    if st.button("🔮 Generate forecast", type="primary", key="btn_generate_forecast", width="stretch"):
+    if st.button("Generate forecast", type="primary", key="btn_generate_forecast", width="stretch"):
         with st.spinner(f"Refitting {chosen_result.label} on full dataset and forecasting {steps_ahead} steps..."):
             try:
                 exog_hash = ""
@@ -522,7 +519,7 @@ def render_forecast_tab() -> None:
                         st.session_state["forecast_results"][ov_key] = ov_fc
 
             except Exception as fc_err:
-                st.error(f"❌ Forecast generation failed: {fc_err}")
+                st.error(f"Forecast generation failed: {fc_err}")
 
     # Display Active Forecast
     active_fc_key = st.session_state.get("active_forecast_key")
@@ -531,18 +528,18 @@ def render_forecast_tab() -> None:
 
         fc_h1, fc_h2, fc_h3 = st.columns([3, 1, 1])
         with fc_h1:
-            st.markdown(f"#### 📡 Forward Projection: {active_fc.label}")
+            st.markdown(f"#### Forward Projection: {active_fc.label}")
         with fc_h2:
             if active_fc.converged:
-                st.success("🟢 Converged", icon="✅")
+                st.success("Converged")
             else:
-                st.warning("🟡 Unconverged", icon="⚠️")
+                st.warning("Unconverged")
         with fc_h3:
             st.metric("Fit Time", f"{active_fc.fit_seconds:.3f} s")
 
         if active_fc.warnings:
             for w in active_fc.warnings:
-                st.warning(f"⚠️ {w}")
+                st.warning(f"{w}")
 
         # Forecast Plot
         fig_future = plot_future_forecast(
@@ -576,23 +573,23 @@ def render_forecast_tab() -> None:
 
         st.plotly_chart(fig_future, width="stretch")
         st.caption(
-            "💡 **Explanation**: Out-of-sample forward projection generated after retraining on 100% of historical observations. "
+            "**Explanation**: Out-of-sample forward projection generated after retraining on 100% of historical observations. "
             "The shaded envelope represents the 95% prediction interval; widening bands reflect compounding forecast uncertainty into the future."
         )
 
         # Future forecast values table
-        st.markdown("##### 📋 Future Forecast Values (with 95% Confidence Intervals)")
+        st.markdown("##### Future Forecast Values (with 95% Confidence Intervals)")
         formatted_future = active_fc.df.copy()
         for c in formatted_future.columns:
             formatted_future[c] = formatted_future[c].round(4)
         st.dataframe(formatted_future, width="stretch")
-        st.caption("📌 Note: Forecasts made through a log or Box-Cox transformation represent median forecasts on the original scale.")
+        st.caption("Note: Forecasts made through a log or Box-Cox transformation represent median forecasts on the original scale.")
 
         # Download Buttons: CSV & Multi-sheet Excel
         d_c1, d_c2 = st.columns(2)
         with d_c1:
             st.download_button(
-                label="📥 Download Future Forecast (CSV)",
+                label="Download Future Forecast (CSV)",
                 data=active_fc.df.to_csv(index=True).encode("utf-8"),
                 file_name=f"atsa_{active_fc.label.lower().replace(' ', '_')}_forecast.csv",
                 mime="text/csv",
@@ -631,7 +628,7 @@ def render_forecast_tab() -> None:
                 },
             )
             st.download_button(
-                label="📊 Download Comprehensive Report (Excel Workbook)",
+                label="Download Comprehensive Report (Excel Workbook)",
                 data=excel_bytes,
                 file_name="atsa_complete_forecast_report.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

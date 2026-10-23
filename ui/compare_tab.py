@@ -105,7 +105,7 @@ def _render_slot_config(
     Tuple[Optional[pd.Series], Optional[str], Optional[int], Optional[int]]
         (prepared_series, source_name, m, holdout)
     """
-    st.markdown(f"#### 📦 {label}")
+    st.markdown(f"#### {label}")
     ns = f"cmp{slot}"
 
     source_options = [
@@ -246,7 +246,7 @@ def _render_slot_config(
 
 def render_compare_tab() -> None:
     """Render the full Phase 8 Two-Dataset Comparison Workspace."""
-    st.subheader("⚖️ Two-Dataset Comparative Analysis")
+    st.subheader("Two-Dataset Comparative Analysis")
     st.markdown(
         "Compare statistical properties, stationarity, autocorrelation, component decomposition, "
         "model accuracy leaderboards, and out-of-sample projections across **TWO time series datasets** side-by-side."
@@ -266,7 +266,7 @@ def render_compare_tab() -> None:
     # Run comparison action button
     btn_col, _, view_col = st.columns([1.5, 1.5, 2])
     with btn_col:
-        run_clicked = st.button("🚀 Run Comparison", type="primary", use_container_width=True)
+        run_clicked = st.button("Run Comparison", type="primary", use_container_width=True)
 
     with view_col:
         view_mode = st.radio(
@@ -309,14 +309,14 @@ def render_compare_tab() -> None:
     # 2. Render Results if Bundles Available
     cmp_bundles = st.session_state.get("cmp_bundles")
     if not cmp_bundles or "A" not in cmp_bundles or "B" not in cmp_bundles:
-        st.info("👆 Configure Dataset A and Dataset B above, then click **🚀 Run Comparison** to evaluate both series.")
+        st.info("Configure Dataset A and Dataset B above, then click **Run Comparison** to evaluate both series.")
         return
 
     b_a: AnalysisBundle = cmp_bundles["A"]
     b_b: AnalysisBundle = cmp_bundles["B"]
 
     st.caption(
-        "📌 **Evaluation Notice**: Raw RMSE and MAE cannot be directly compared between datasets with differing scales or units. "
+        "**Evaluation Notice**: Raw RMSE and MAE cannot be directly compared between datasets with differing scales or units. "
         "Use scale-free metrics (MASE, sMAPE, RelRMSE vs Naive) to assess relative predictability."
     )
 
@@ -325,22 +325,22 @@ def render_compare_tab() -> None:
     def render_dual_section(title: str, explanation: str, render_fn_a: Any, render_fn_b: Any) -> None:
         """Helper to render section either stacked (A above B) or side by side."""
         st.markdown(f"### {title}")
-        with st.expander("ℹ️ What does this show?"):
+        with st.expander("What does this show?"):
             st.markdown(explanation)
 
         if is_stacked:
-            st.markdown(f"##### 🔹 Dataset A: `{b_a.name}`")
+            st.markdown(f"##### Dataset A: `{b_a.name}`")
             render_fn_a()
             st.markdown("---")
-            st.markdown(f"##### 🔸 Dataset B: `{b_b.name}`")
+            st.markdown(f"##### Dataset B: `{b_b.name}`")
             render_fn_b()
         else:
             c_left, c_right = st.columns(2)
             with c_left:
-                st.markdown(f"##### 🔹 Dataset A: `{b_a.name}`")
+                st.markdown(f"##### Dataset A: `{b_a.name}`")
                 render_fn_a()
             with c_right:
-                st.markdown(f"##### 🔸 Dataset B: `{b_b.name}`")
+                st.markdown(f"##### Dataset B: `{b_b.name}`")
                 render_fn_b()
         st.markdown("---")
 
@@ -350,13 +350,13 @@ def render_compare_tab() -> None:
     def _sec1_a():
         fig = plot_time_series(b_a.series, title=f"{b_a.name} ({b_a.freq_label})", show_rangeslider=False)
         st.plotly_chart(fig, use_container_width=True, key="cmp_ts_plot_a")
-        st.caption(f"💡 **Explanation**: Historical trajectory and evolution of {b_a.name}.")
+        st.caption(f"**Explanation**: Historical trajectory and evolution of {b_a.name}.")
         st.dataframe(b_a.series.describe().to_frame(name=b_a.name), use_container_width=True)
 
     def _sec1_b():
         fig = plot_time_series(b_b.series, title=f"{b_b.name} ({b_b.freq_label})", show_rangeslider=False)
         st.plotly_chart(fig, use_container_width=True, key="cmp_ts_plot_b")
-        st.caption(f"💡 **Explanation**: Historical trajectory and evolution of {b_b.name}.")
+        st.caption(f"**Explanation**: Historical trajectory and evolution of {b_b.name}.")
         st.dataframe(b_b.series.describe().to_frame(name=b_b.name), use_container_width=True)
 
     render_dual_section(
@@ -368,11 +368,11 @@ def render_compare_tab() -> None:
     )
 
     # Indexed Overlay
-    st.markdown("#### 📈 Indexed Growth Comparison (Base = 100)")
+    st.markdown("#### Indexed Growth Comparison (Base = 100)")
     fig_idx = plot_indexed_overlay(b_a.series, b_b.series, names=(b_a.name, b_b.name))
     st.plotly_chart(fig_idx, use_container_width=True, key="cmp_indexed_growth_plot")
     st.caption(
-        "💡 **Explanation**: Indexed growth comparison rebased to 100 at series start ($t=0$). "
+        "**Explanation**: Indexed growth comparison rebased to 100 at series start ($t=0$). "
         "Enables scale-free evaluation of relative growth trajectories, drift, and volatility."
     )
     st.markdown("---")
@@ -414,7 +414,7 @@ def render_compare_tab() -> None:
             fig = plot_acf_pacf_combined(data["lags"], data["acf"], data["pacf"], data["conf_bound"])
             st.plotly_chart(fig, use_container_width=True, key=f"cmp_acf_plot_{slot}")
             st.caption(
-                f"💡 **Explanation**: ACF and PACF for {bundle.name} computed on differenced series (d={bundle.suggested_d}, D={bundle.suggested_D}) "
+                f"**Explanation**: ACF and PACF for {bundle.name} computed on differenced series (d={bundle.suggested_d}, D={bundle.suggested_D}) "
                 "to guide Box-Jenkins AR ($p$) and MA ($q$) order selection."
             )
         else:
@@ -444,7 +444,7 @@ def render_compare_tab() -> None:
                     fig = plot_decomposition(decomp_fig_data)
                     st.plotly_chart(fig, use_container_width=True, key=f"cmp_decomp_plot_{slot}")
                     st.caption(
-                        f"💡 **Explanation**: Decomposed Trend, Seasonal, and Residual components for {bundle.name}."
+                        f"**Explanation**: Decomposed Trend, Seasonal, and Residual components for {bundle.name}."
                     )
             except Exception:
                 pass
@@ -461,7 +461,7 @@ def render_compare_tab() -> None:
     # SECTION 5: Model Leaderboards & Box-Jenkins Comparison
     # =========================================================================
     st.markdown("### 5. Out-of-Sample Holdout Leaderboard & Box-Jenkins Zoo")
-    with st.expander("ℹ️ What does this show?"):
+    with st.expander("What does this show?"):
         st.markdown(
             "Ranks candidate models on out-of-sample holdout validation using MASE (Mean Absolute Scaled Error). "
             "A MASE < 1 indicates the model achieves higher accuracy than the naive baseline. "
@@ -471,46 +471,46 @@ def render_compare_tab() -> None:
 
     sec5_view = st.radio(
         "Leaderboard Perspective:",
-        ["🎯 Box-Jenkins Comparison (AR, MA, ARMA, ARIMA, SARIMA)", "📋 Full Model Zoo Leaderboard"],
+        ["Box-Jenkins Comparison (AR, MA, ARMA, ARIMA, SARIMA)", "Full Model Zoo Leaderboard"],
         horizontal=True,
         key="cmp_sec5_view_mode",
     )
 
-    if sec5_view == "🎯 Box-Jenkins Comparison (AR, MA, ARMA, ARIMA, SARIMA)":
-        st.markdown("##### 🏛️ Classical Box-Jenkins Architecture Matrix (AR, MA, ARMA, ARIMA, SARIMA)")
+    if sec5_view == "Box-Jenkins Comparison (AR, MA, ARMA, ARIMA, SARIMA)":
+        st.markdown("##### Classical Box-Jenkins Architecture Matrix (AR, MA, ARMA, ARIMA, SARIMA)")
         bj_df = build_arima_family_comparison(b_a, b_b)
         st.dataframe(bj_df, use_container_width=True)
 
         bj_plot_mode = st.radio(
             "Box-Jenkins Comparative Plot Type:",
             [
-                "📊 3-Metric Overview Panel (MASE, sMAPE, AIC)",
-                "📈 Stacked Holdout Forecast Trajectories",
-                "🎯 Focus Metric Bars",
-                "🕸️ Relative Accuracy Radar",
+                "3-Metric Overview Panel (MASE, sMAPE, AIC)",
+                "Stacked Holdout Forecast Trajectories",
+                "Focus Metric Bars",
+                "Relative Accuracy Radar",
             ],
             horizontal=True,
             key="cmp_bj_plot_mode",
         )
 
-        if bj_plot_mode == "📊 3-Metric Overview Panel (MASE, sMAPE, AIC)":
+        if bj_plot_mode == "3-Metric Overview Panel (MASE, sMAPE, AIC)":
             fig_multi = plot_arima_multi_metric_bars(b_a, b_b, names=(b_a.name, b_b.name))
             st.plotly_chart(fig_multi, use_container_width=True, key="cmp_bj_multi_metric_plot")
             st.caption(
-                "💡 **Explanation**: Multi-metric evaluation panel comparing Box-Jenkins families (AR, MA, ARMA, ARIMA, SARIMA) "
+                "**Explanation**: Multi-metric evaluation panel comparing Box-Jenkins families (AR, MA, ARMA, ARIMA, SARIMA) "
                 "across MASE, sMAPE, and AIC on both datasets."
             )
-        elif bj_plot_mode == "📈 Stacked Holdout Forecast Trajectories":
+        elif bj_plot_mode == "Stacked Holdout Forecast Trajectories":
             fig_dual_ov = plot_arima_dual_overlay(b_a, b_b, names=(b_a.name, b_b.name))
             st.plotly_chart(fig_dual_ov, use_container_width=True, key="cmp_bj_dual_overlay_plot")
             st.caption(
-                "💡 **Explanation**: Stacked panels displaying holdout forecast paths of Box-Jenkins specifications against actual test observations for each dataset."
+                "**Explanation**: Stacked panels displaying holdout forecast paths of Box-Jenkins specifications against actual test observations for each dataset."
             )
-        elif bj_plot_mode == "🕸️ Relative Accuracy Radar":
+        elif bj_plot_mode == "Relative Accuracy Radar":
             fig_radar = plot_arima_radar(b_a, b_b, names=(b_a.name, b_b.name))
             st.plotly_chart(fig_radar, use_container_width=True, key="cmp_bj_radar_plot")
             st.caption(
-                "💡 **Explanation**: Radar chart visualizing comparative holdout error metrics across model architectures; smaller areas indicate superior overall precision."
+                "**Explanation**: Radar chart visualizing comparative holdout error metrics across model architectures; smaller areas indicate superior overall precision."
             )
         else:
             metric_choice = st.radio(
@@ -523,12 +523,12 @@ def render_compare_tab() -> None:
             fig_bj_bars = plot_arima_family_bars(b_a, b_b, metric=metric_key, names=(b_a.name, b_b.name))
             st.plotly_chart(fig_bj_bars, use_container_width=True, key="cmp_bj_bars_plot")
             st.caption(
-                f"💡 **Explanation**: Focus bar chart comparing {metric_key} across Box-Jenkins model families for each dataset."
+                f"**Explanation**: Focus bar chart comparing {metric_key} across Box-Jenkins model families for each dataset."
             )
         st.markdown("---")
     else:
         def _render_leaderboard(bundle: AnalysisBundle):
-            st.success(f"🏆 **Top Performer**: **{bundle.best_label}** (RelRMSE: {bundle.rel_rmse_best:.3f})")
+            st.success(f"**Top Performer**: **{bundle.best_label}** (RelRMSE: {bundle.rel_rmse_best:.3f})")
             if not bundle.comparison.empty:
                 display_cols = [c for c in ["Rank", "Model", "Family", "Converged", "MASE", "sMAPE", "RelRMSE_vs_ref", "Coverage95", "AIC", "FitSec"] if c in bundle.comparison.columns]
                 st.dataframe(bundle.comparison[display_cols], use_container_width=True)
@@ -536,18 +536,18 @@ def render_compare_tab() -> None:
                 st.info("No models estimated.")
 
         if is_stacked:
-            st.markdown(f"##### 🔹 Dataset A: `{b_a.name}`")
+            st.markdown(f"##### Dataset A: `{b_a.name}`")
             _render_leaderboard(b_a)
             st.markdown("---")
-            st.markdown(f"##### 🔸 Dataset B: `{b_b.name}`")
+            st.markdown(f"##### Dataset B: `{b_b.name}`")
             _render_leaderboard(b_b)
         else:
             c_left, c_right = st.columns(2)
             with c_left:
-                st.markdown(f"##### 🔹 Dataset A: `{b_a.name}`")
+                st.markdown(f"##### Dataset A: `{b_a.name}`")
                 _render_leaderboard(b_a)
             with c_right:
-                st.markdown(f"##### 🔸 Dataset B: `{b_b.name}`")
+                st.markdown(f"##### Dataset B: `{b_b.name}`")
                 _render_leaderboard(b_b)
         st.markdown("---")
 
@@ -555,7 +555,7 @@ def render_compare_tab() -> None:
     # SECTION 6: Holdout Forecast Overlay (Top Candidates & Box-Jenkins Zoo)
     # =========================================================================
     st.markdown("### 6. Holdout Forecast Overlay")
-    with st.expander("ℹ️ What does this show?"):
+    with st.expander("What does this show?"):
         st.markdown(
             "Overlays model predictions directly against actual held-out observations. "
             "Highlights how accurately each architecture tracks local directional turning points and peaks. "
@@ -564,14 +564,14 @@ def render_compare_tab() -> None:
 
     overlay_view = st.radio(
         "Forecast Overlay Selection:",
-        ["🎯 Box-Jenkins Models (AR, MA, ARMA, ARIMA, SARIMA)", "🏆 Top 3 Candidate Models Overall"],
+        ["Box-Jenkins Models (AR, MA, ARMA, ARIMA, SARIMA)", "Top 3 Candidate Models Overall"],
         horizontal=True,
         key="cmp_sec6_overlay_view",
     )
 
     def _render_holdout_overlay(bundle: AnalysisBundle, slot: str, mode: str):
         selected_models: List[Any] = []
-        if mode == "🎯 Box-Jenkins Models (AR, MA, ARMA, ARIMA, SARIMA)":
+        if mode == "Box-Jenkins Models (AR, MA, ARMA, ARIMA, SARIMA)":
             bj_fams = {"ar", "ma", "arma", "arima", "sarima"}
             for m_res in bundle.model_results:
                 if m_res.family in bj_fams and getattr(m_res, "test_forecast", None) is not None and not m_res.test_forecast.empty:
@@ -604,7 +604,7 @@ def render_compare_tab() -> None:
                     config={"displayModeBar": "hover", "displaylogo": False},
                 )
                 st.caption(
-                    f"💡 **Explanation**: Out-of-sample holdout forecasts versus actual ground truth for {bundle.name}, highlighting turning-point tracking."
+                    f"**Explanation**: Out-of-sample holdout forecasts versus actual ground truth for {bundle.name}, highlighting turning-point tracking."
                 )
             else:
                 st.info("Holdout forecasts not available.")
@@ -612,18 +612,18 @@ def render_compare_tab() -> None:
             st.info("Holdout overlay not available.")
 
     if is_stacked:
-        st.markdown(f"##### 🔹 Dataset A: `{b_a.name}`")
+        st.markdown(f"##### Dataset A: `{b_a.name}`")
         _render_holdout_overlay(b_a, "a", overlay_view)
         st.markdown("---")
-        st.markdown(f"##### 🔸 Dataset B: `{b_b.name}`")
+        st.markdown(f"##### Dataset B: `{b_b.name}`")
         _render_holdout_overlay(b_b, "b", overlay_view)
     else:
         c_left, c_right = st.columns(2)
         with c_left:
-            st.markdown(f"##### 🔹 Dataset A: `{b_a.name}`")
+            st.markdown(f"##### Dataset A: `{b_a.name}`")
             _render_holdout_overlay(b_a, "a", overlay_view)
         with c_right:
-            st.markdown(f"##### 🔸 Dataset B: `{b_b.name}`")
+            st.markdown(f"##### Dataset B: `{b_b.name}`")
             _render_holdout_overlay(b_b, "b", overlay_view)
     st.markdown("---")
 
@@ -635,7 +635,7 @@ def render_compare_tab() -> None:
             fig = plot_future_forecast(bundle.series, bundle.future.df, label=bundle.future.label)
             st.plotly_chart(fig, use_container_width=True, key=f"cmp_future_plot_{slot}")
             st.caption(
-                f"💡 **Explanation**: Future multi-step projection with 95% confidence intervals for {bundle.name} using its top model ({bundle.future.label})."
+                f"**Explanation**: Future multi-step projection with 95% confidence intervals for {bundle.name} using its top model ({bundle.future.label})."
             )
         else:
             st.info("Future forecast projection not available.")

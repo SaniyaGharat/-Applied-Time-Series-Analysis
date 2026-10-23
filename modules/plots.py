@@ -2072,8 +2072,8 @@ def plot_arima_dual_overlay(
         rows=2,
         cols=1,
         subplot_titles=[
-            f"🔹 {names[0]} - Actual Holdout vs Box-Jenkins Models",
-            f"🔸 {names[1]} - Actual Holdout vs Box-Jenkins Models",
+            f"{names[0]} - Actual Holdout vs Box-Jenkins Models",
+            f"{names[1]} - Actual Holdout vs Box-Jenkins Models",
         ],
         vertical_spacing=0.14,
     )

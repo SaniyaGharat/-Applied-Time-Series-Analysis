@@ -64,26 +64,26 @@ def render_models_tab() -> None:
 
     # 1. Precondition checks
     if ts_series is None or len(ts_series) == 0:
-        st.info("ℹ️ No time series dataset is loaded yet. Please upload a dataset or click **Load Demo Data** in the 📥 Data tab.")
+        st.info("No time series dataset is loaded yet. Please upload a dataset or click **Load Demo Data** in the Data tab.")
         return
 
     if model_base_series is None:
         st.info(
-            "ℹ️ Modeling base series is not set. Please review the dataset in the 📥 Data tab "
-            "or configure transformations in the 🔍 EDA & Diagnostics tab."
+            "Modeling base series is not set. Please review the dataset in the Data tab "
+            "or configure transformations in the EDA & Diagnostics tab."
         )
         return
 
     n = len(model_base_series)
     if model_base_series.nunique() <= 1:
-        st.warning("⚠️ The loaded time series is constant (all values are identical). Model estimation cannot proceed.")
+        st.warning("The loaded time series is constant (all values are identical). Model estimation cannot proceed.")
         return
 
     if n < 30:
-        st.warning(f"⚠️ The loaded time series has only {n} observations. Reliable time series modeling requires at least 30 observations.")
+        st.warning(f"The loaded time series has only {n} observations. Reliable time series modeling requires at least 30 observations.")
         return
 
-    st.markdown("### 🧮 Model Zoo & Forecast Workspace")
+    st.markdown("### Model Zoo & Forecast Workspace")
 
     # 2. Active Pipeline Banner
     steps = transform_info.get("steps", [])
@@ -94,8 +94,7 @@ def render_models_tab() -> None:
 
     if steps or suggested_d > 0 or suggested_D > 0:
         st.info(
-            f"⚡ **Active Modeling Pipeline**: `{steps_txt}` | Auto-suggested differencing: `d={suggested_d}, D={suggested_D}` (Configured in EDA tab).",
-            icon="🚀",
+            f"**Active Modeling Pipeline**: `{steps_txt}` | Auto-suggested differencing: `d={suggested_d}, D={suggested_D}` (Configured in EDA tab)."
         )
 
     # A2: Stale widget reset when transform suggestions differ from last seen
@@ -211,12 +210,12 @@ def render_models_tab() -> None:
     st.session_state["selected_model_family"] = selected_family
 
     if not selected_family:
-        st.info("👆 Please select a forecasting model family above to begin configuration and estimation.")
+        st.info("Please select a forecasting model family above to begin configuration and estimation.")
         return
 
     fam_meta = next((f for f in all_families if f["key"] == selected_family), None)
     if fam_meta:
-        st.caption(f"📖 **{fam_meta['label']}**: {fam_meta['description']}")
+        st.caption(f"**{fam_meta['label']}**: {fam_meta['description']}")
 
     # SARIMAX Exogenous check
     if selected_family == "sarimax":
@@ -227,7 +226,7 @@ def render_models_tab() -> None:
             st.caption(f"Exogenous features: `{', '.join(list(exog_df.columns))}`")
 
     # 5. Model Parameter Configuration Form
-    st.markdown("##### ⚙️ Hyperparameters & Specification")
+    st.markdown("##### Hyperparameters & Specification")
 
     # Compute suggested p and q on differenced base series
     diff_base, _ = transform_series(
@@ -361,26 +360,26 @@ def render_models_tab() -> None:
 
     # Check for failure
     if not result.converged and (result.test_forecast.empty or result.test_forecast["mean"].isna().all()):
-        st.error(f"❌ **Model Estimation Failed**: {'; '.join(result.warnings) if result.warnings else result.summary_text}")
+        st.error(f"**Model Estimation Failed**: {'; '.join(result.warnings) if result.warnings else result.summary_text}")
         return
 
     # 7. Result Header & Evaluation Cards
     st.markdown("---")
     res_h1, res_h2, res_h3 = st.columns([3, 1.2, 1.2])
     with res_h1:
-        st.markdown(f"#### 📊 {result.label}")
+        st.markdown(f"#### {result.label}")
     with res_h2:
         if result.converged:
-            st.success("🟢 Converged", icon="✅")
+            st.success("Converged")
         else:
-            st.warning("🟡 Unconverged", icon="⚠️")
+            st.warning("Unconverged")
     with res_h3:
         st.metric("Fit Duration", f"{result.fit_seconds:.3f} s")
 
     # Warning notifications
     if result.warnings:
         for w in result.warnings:
-            st.warning(f"⚠️ {w}")
+            st.warning(f"{w}")
 
     # Metric Cards
     m_row1, m_row2, m_row3, m_row4, m_row5, m_row6, m_row7 = st.columns(7)
@@ -400,16 +399,16 @@ def render_models_tab() -> None:
     m_row7.metric("BIC", f"{bic_val:.1f}" if bic_val is not None else "N/A")
 
     if np.isnan(mape_val) or mape_val > 100.0:
-        st.caption("⚠️ *Note on MAPE*: MAPE is distorted when actual values cross or approach zero. Inspect sMAPE and MASE instead.")
+        st.caption("*Note on MAPE*: MAPE is distorted when actual values cross or approach zero. Inspect sMAPE and MASE instead.")
 
     # 8. Result Tabs
     t_fc, t_diag, t_plots, t_summary, t_grid = st.tabs(
         [
-            "📈 Fit & Forecast",
-            "🧪 Residual Diagnostics",
-            "📐 Model Plots",
-            "📋 Parameters & Summary",
-            "🔎 Auto Order Search",
+            "Fit & Forecast",
+            "Residual Diagnostics",
+            "Model Plots",
+            "Parameters & Summary",
+            "Auto Order Search",
         ]
     )
 
@@ -426,18 +425,18 @@ def render_models_tab() -> None:
         )
         st.plotly_chart(fig_fit, width="stretch", key=f"plot_fit_vs_actual_{selected_family}_{result.key}")
         st.caption(
-            "💡 **Explanation**: Compares actual historical data against in-sample fitted values (training period) and out-of-sample holdout forecasts (test period). "
+            "**Explanation**: Compares actual historical data against in-sample fitted values (training period) and out-of-sample holdout forecasts (test period). "
             "The shaded band represents the 95% prediction interval. Look for close tracking of historical fluctuations and realistic uncertainty bounds."
         )
 
         fig_zoom = plot_holdout_zoom(actual=ts_series, forecast_df=result.test_forecast)
         st.plotly_chart(fig_zoom, width="stretch", key=f"plot_holdout_zoom_{selected_family}_{result.key}")
         st.caption(
-            "💡 **Explanation**: Magnified view of the out-of-sample holdout evaluation window. "
+            "**Explanation**: Magnified view of the out-of-sample holdout evaluation window. "
             "Highlights how well the forecast trajectory tracks ground truth turning points and whether actuals stay within the 95% confidence interval."
         )
 
-        st.markdown("##### 📄 Holdout Comparison Table")
+        st.markdown("##### Holdout Comparison Table")
         test_actual = ts_series.reindex(result.test_forecast.index)
         comp_df = pd.DataFrame(
             {
@@ -458,13 +457,13 @@ def render_models_tab() -> None:
         st.subheader("Statistical Residual Diagnostics")
         burn_in_n = spec.get("d", 0) + spec.get("D", 0) * (spec.get("m", 1) or 1)
         if burn_in_n > 0:
-            st.caption(f"ℹ️ The first {burn_in_n} in-sample residuals were dropped as integration burn-in.")
+            st.caption(f"The first {burn_in_n} in-sample residuals were dropped as integration burn-in.")
 
         if not result.residuals.empty:
             fig_resid = plot_residual_diagnostics(result.residuals)
             st.plotly_chart(fig_resid, width="stretch", key=f"plot_residual_diag_{selected_family}_{result.key}")
             st.caption(
-                "💡 **Explanation**: 4-panel residual validation: (1) Standardized residuals should display random variation around zero without patterns; "
+                "**Explanation**: 4-panel residual validation: (1) Standardized residuals should display random variation around zero without patterns; "
                 "(2) Histogram/KDE should follow the standard normal curve $N(0, 1)$; (3) Normal Q-Q points should lie on the red 45° line; "
                 "(4) Residual ACF spikes should remain inside the 95% confidence bounds, confirming absence of remaining autocorrelation (white noise)."
             )
@@ -476,9 +475,9 @@ def render_models_tab() -> None:
                     st.dataframe(result.ljung_box, width="stretch")
                     p_vals = result.ljung_box["p-value"].dropna()
                     if (p_vals > 0.05).all():
-                        st.success("✅ No significant autocorrelation detected in residuals (all p > 0.05). Residuals resemble white noise.")
+                        st.success("No significant autocorrelation detected in residuals (all p > 0.05). Residuals resemble white noise.")
                     else:
-                        st.warning("⚠️ Significant autocorrelation detected at one or more lags (p <= 0.05). Model may have uncaptured dynamics.")
+                        st.warning("Significant autocorrelation detected at one or more lags (p <= 0.05). Model may have uncaptured dynamics.")
                 else:
                     st.info("Ljung-Box test could not be computed for this specification.")
 
@@ -490,9 +489,9 @@ def render_models_tab() -> None:
                     st.metric("JB Statistic", f"{jb_stat:.4f}")
                     st.metric("JB p-value", f"{jb_pval:.4f}")
                     if jb_pval > 0.05:
-                        st.success("✅ Residuals conform to Gaussian normality (fail to reject H0, p > 0.05).")
+                        st.success("Residuals conform to Gaussian normality (fail to reject H0, p > 0.05).")
                     else:
-                        st.info("ℹ️ Residuals exhibit non-normal kurtosis or skew (p <= 0.05). Consider variance stabilization.")
+                        st.info("Residuals exhibit non-normal kurtosis or skew (p <= 0.05). Consider variance stabilization.")
                 else:
                     st.info("Normality test sample size is insufficient.")
         else:
@@ -522,7 +521,7 @@ def render_models_tab() -> None:
             )
             st.plotly_chart(fig_comb, width="stretch", key=f"plot_acf_pacf_ident_{selected_family}_{result.key}")
             st.caption(
-                f"💡 **Explanation**: ACF and PACF calculated on the differenced base series (d={d_val}, D={D_val}) to guide Box-Jenkins order selection. "
+                f"**Explanation**: ACF and PACF calculated on the differenced base series (d={d_val}, D={D_val}) to guide Box-Jenkins order selection. "
                 f"Contiguous suggestions: p={sugg_orders['suggested_p']}, q={sugg_orders['suggested_q']} | Active model fitted: p={spec.get('p')}, q={spec.get('q')}."
             )
 
@@ -534,7 +533,7 @@ def render_models_tab() -> None:
             fig_roots = plot_inverse_roots(ar_r, ma_r)
             st.plotly_chart(fig_roots, width="stretch", key=f"plot_inverse_roots_{selected_family}_{result.key}")
             st.caption(
-                "💡 **Explanation**: Complex plane display of inverse AR (blue) and MA (orange) polynomial roots. "
+                "**Explanation**: Complex plane display of inverse AR (blue) and MA (orange) polynomial roots. "
                 "For stationarity and invertibility, all inverse roots must lie strictly inside the unit circle ($|1/r| < 1$). "
                 "Roots lying on or outside the circle indicate model instability or non-invertibility."
             )
@@ -551,9 +550,9 @@ def render_models_tab() -> None:
                     ma_invertible = False
 
             if ar_stable and ma_invertible:
-                st.success("✅ All inverse AR roots and MA roots lie strictly inside the unit circle (|1/r| < 1). The process is stable and invertible.")
+                st.success("All inverse AR roots and MA roots lie strictly inside the unit circle (|1/r| < 1). The process is stable and invertible.")
             else:
-                st.warning("⚠️ One or more inverse roots lie on or outside the unit circle (|1/r| >= 1). Process may be non-stationary or non-invertible.")
+                st.warning("One or more inverse roots lie on or outside the unit circle (|1/r| >= 1). Process may be non-stationary or non-invertible.")
 
             # 3. Theoretical vs Empirical ACF/PACF (only if d==0 and D==0)
             st.markdown("---")
@@ -569,13 +568,13 @@ def render_models_tab() -> None:
                     )
                     st.plotly_chart(fig_theo, width="stretch", key=f"plot_theoretical_vs_empirical_{selected_family}_{result.key}")
                     st.caption(
-                        "💡 **Explanation**: Compares theoretical ACF/PACF implied by the fitted ARMA parameters (red markers) against sample empirical autocorrelations (bars). "
+                        "**Explanation**: Compares theoretical ACF/PACF implied by the fitted ARMA parameters (red markers) against sample empirical autocorrelations (bars). "
                         "Close agreement confirms that the estimated model accurately reproduces the observed correlation structure."
                     )
                 else:
                     st.info("Theoretical ACF/PACF cannot be calculated for non-stationary AR polynomial.")
             else:
-                st.info("ℹ️ Theoretical ACF/PACF overlay is displayed only for stationary, non-differenced processes (d=0, D=0).")
+                st.info("Theoretical ACF/PACF overlay is displayed only for stationary, non-differenced processes (d=0, D=0).")
 
             # 4. Exogenous Regressor Coefficients (SARIMAX)
             if selected_family == "sarimax" and "exog_coefs" in result.extras:
@@ -588,7 +587,7 @@ def render_models_tab() -> None:
                     )
                     st.bar_chart(exog_df_plot.set_index("Feature"))
                     st.caption(
-                        r"💡 **Explanation**: Estimated regression coefficients ($\beta$) for exogenous predictors. "
+                        r"**Explanation**: Estimated regression coefficients ($\beta$) for exogenous predictors. "
                         "Positive coefficients signify an expected positive response in the target; negative coefficients indicate an inverse relationship."
                     )
 
@@ -596,7 +595,7 @@ def render_models_tab() -> None:
             fig_hw = plot_hw_components(result.extras, result.train_index)
             st.plotly_chart(fig_hw, width="stretch", key=f"plot_hw_components_{selected_family}_{result.key}")
             st.caption(
-                r"💡 **Explanation**: Internal exponential smoothing states over time: Level ($\ell_t$), Trend ($b_t$), and Seasonal ($s_t$) components. "
+                r"**Explanation**: Internal exponential smoothing states over time: Level ($\ell_t$), Trend ($b_t$), and Seasonal ($s_t$) components. "
                 "Shows how the smoothing equations adapted to the evolving series dynamics."
             )
 
@@ -689,7 +688,7 @@ def render_models_tab() -> None:
                 fig_grid = plot_grid_results(grid_df, top_n=15)
                 st.plotly_chart(fig_grid, width="stretch", key=f"plot_grid_results_{selected_family}")
                 st.caption(
-                    f"💡 **Explanation**: Top 15 hyperparameter specifications ranked by {best_info['criterion'].upper()}. "
+                    f"**Explanation**: Top 15 hyperparameter specifications ranked by {best_info['criterion'].upper()}. "
                     "Lower scores denote superior trade-off between model fit and parsimony or smaller holdout error."
                 )
 
@@ -710,7 +709,7 @@ def render_models_tab() -> None:
                         pending["form_s_D"] = int(best_s.get("D", 0))
                         pending["form_s_Q"] = int(best_s.get("Q", 1))
                     st.session_state["pending_spec"] = pending
-                    st.toast(f"Staged best spec {best_info['best_spec_str']} for update!", icon="✨")
+                    st.toast(f"Staged best spec {best_info['best_spec_str']} for update!")
                     st.rerun()
 
     # -------------------------------------------------------------
@@ -750,5 +749,5 @@ def render_models_tab() -> None:
                 st.session_state["benchmark_df"] = bench_df
 
         if "benchmark_df" in st.session_state:
-            st.markdown("##### 🏆 Holdout Performance Leaderboard (Sorted by RMSE)")
+            st.markdown("##### Holdout Performance Leaderboard (Sorted by RMSE)")
             st.dataframe(st.session_state["benchmark_df"], width="stretch")

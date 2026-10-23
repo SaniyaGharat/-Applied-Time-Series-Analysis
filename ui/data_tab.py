@@ -104,7 +104,7 @@ def clear_data_action() -> None:
 
 def render_data_tab() -> None:
     """Render the full Phase 1 Data Ingestion & Preprocessing tab with exog support."""
-    st.markdown("### 📥 Dataset Ingestion & Configuration")
+    st.markdown("### Dataset Ingestion & Configuration")
     st.markdown(
         "Upload a time series dataset (**CSV**, **XLSX**, or **XLS**), choose a bundled sample dataset, or load "
         "reproducible demo data to begin ingestion, datetime parsing, frequency regularization, and exploratory visualization."
@@ -159,7 +159,7 @@ def render_data_tab() -> None:
     with demo_col:
         st.write("")
         st.write("")
-        if st.button("🧪 Load Demo Data", help="Load reproducible monthly demo data (seed=42).", width="stretch"):
+        if st.button("Load Demo Data", help="Load reproducible monthly demo data (seed=42).", width="stretch"):
             st.session_state["raw_df"] = create_demo_data()
             st.session_state["source_name"] = "Demo Data (Synthetic Monthly, Seed=42)"
             st.session_state["selected_date_col"] = "Date"
@@ -176,7 +176,7 @@ def render_data_tab() -> None:
     with clear_col:
         st.write("")
         st.write("")
-        if st.button("🗑️ Clear Data", help="Reset all data and clear widget state.", width="stretch"):
+        if st.button("Clear Data", help="Reset all data and clear widget state.", width="stretch"):
             clear_data_action()
             st.rerun()
 
@@ -206,7 +206,7 @@ def render_data_tab() -> None:
     source_name = st.session_state.get("source_name")
 
     if raw_df is None:
-        st.info("👆 Please upload a CSV/XLSX file, select a sample dataset, or click **Load Demo Data** to begin.")
+        st.info("Please upload a CSV/XLSX file, select a sample dataset, or click **Load Demo Data** to begin.")
         return
 
     # Upload validation: empty dataset
@@ -230,7 +230,7 @@ def render_data_tab() -> None:
 
     # 1. Column Selection & Date Parsing Configuration
     st.markdown("---")
-    st.subheader("⚙️ 1. Column Selection & Date Parsing")
+    st.subheader("1. Column Selection & Date Parsing")
 
     candidate_dates = detect_date_columns(raw_df)
     candidate_numerics = detect_numeric_columns(raw_df)
@@ -361,7 +361,7 @@ def render_data_tab() -> None:
 
     # 2. Preprocessing & Regularization Section
     st.markdown("---")
-    st.subheader("🛠️ 2. Preprocessing & Regularization")
+    st.subheader("2. Preprocessing & Regularization")
     st.markdown(
         "Enforce a uniform sampling frequency, merge any duplicate timestamps by mean, "
         "and impute missing dates or missing values."
@@ -470,10 +470,10 @@ def render_data_tab() -> None:
 
     # Display Warning if resample fallback occurred
     if report.get("method") == "resample" and report.get("warning"):
-        st.warning(f"⚠️ **Frequency Alignment Notice**: {report['warning']}")
+        st.warning(f"**Frequency Alignment Notice**: {report['warning']}")
 
     # Display Regularization Report
-    st.markdown("##### 📋 Regularization Report")
+    st.markdown("##### Regularization Report")
     r_c1, r_c2, r_c3, r_c4, r_c5 = st.columns(5)
     r_c1.metric("Duplicates Merged", report["duplicates_merged"])
     r_c2.metric("Rows Added (Gaps)", report["rows_added"])
@@ -483,7 +483,7 @@ def render_data_tab() -> None:
 
     # 3. Series Summary & Visualizations
     st.markdown("---")
-    st.subheader("📊 3. Analysis Series Summary")
+    st.subheader("3. Analysis Series Summary")
 
     summary = get_series_summary(regularized_series)
     m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
@@ -495,7 +495,7 @@ def render_data_tab() -> None:
 
     # Tabs for interactive visualization, data table, and descriptive statistics
     tab_chart, tab_table, tab_stats = st.tabs(
-        ["📈 Interactive Line Plot", "📄 Indexed Data Preview", "📋 Descriptive Statistics"]
+        ["Interactive Line Plot", "Indexed Data Preview", "Descriptive Statistics"]
     )
 
     with tab_chart:
@@ -508,7 +508,7 @@ def render_data_tab() -> None:
         )
         st.plotly_chart(fig, width="stretch")
         st.caption(
-            "💡 **Explanation**: Displays the historical trajectory of the cleaned and regularized time series. "
+            "**Explanation**: Displays the historical trajectory of the cleaned and regularized time series. "
             "Use the interactive range slider below the chart to zoom into specific time horizons, identify long-term trends, "
             "structural shifts, or recurring seasonal fluctuations."
         )

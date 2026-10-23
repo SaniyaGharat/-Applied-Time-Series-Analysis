@@ -68,28 +68,28 @@ def render_eda_tab() -> None:
     series = st.session_state.get("ts_series")
 
     if series is None or len(series) == 0:
-        st.info("ℹ️ No time series dataset is loaded yet. Please upload a dataset or click **Load Demo Data** in the 📥 Data tab.")
+        st.info("No time series dataset is loaded yet. Please upload a dataset or click **Load Demo Data** in the Data tab.")
         return
 
     # Check for constant series or invalid data
     if series.nunique() <= 1:
-        st.warning("⚠️ The loaded time series is constant (all values are identical). Statistical diagnostic tests cannot be computed.")
+        st.warning("The loaded time series is constant (all values are identical). Statistical diagnostic tests cannot be computed.")
         return
 
-    st.markdown("### 🔍 Exploratory Data Analysis & Diagnostics")
+    st.markdown("### Exploratory Data Analysis & Diagnostics")
     st.caption(f"Analyzing `{series.name or 'Target Series'}` ({len(series)} observations)")
 
     if len(series) > 5000:
-        st.info("ℹ️ Dataset has > 5,000 observations. EDA diagnostics and plots are computed on the most recent 5,000 observations for optimal responsiveness.")
+        st.info("Dataset has > 5,000 observations. EDA diagnostics and plots are computed on the most recent 5,000 observations for optimal responsiveness.")
         series = series.iloc[-5000:]
 
     eda_t1, eda_t2, eda_t3, eda_t4, eda_t5 = st.tabs(
         [
-            "⚡ Stationarity",
-            "📊 ACF / PACF",
-            "🧩 Decomposition",
-            "🔄 Transformations & Differencing",
-            "📈 Other EDA",
+            "Stationarity",
+            "ACF / PACF",
+            "Decomposition",
+            "Transformations & Differencing",
+            "Other EDA",
         ]
     )
 
@@ -215,7 +215,7 @@ def render_eda_tab() -> None:
         roll_fig = plot_rolling_stats(series, r_df, window=roll_window)
         st.plotly_chart(roll_fig, width="stretch")
         st.caption(
-            "💡 **Explanation**: Tracks the moving average (level) and moving standard deviation (volatility) over time. "
+            "**Explanation**: Tracks the moving average (level) and moving standard deviation (volatility) over time. "
             "A stationary series exhibits a relatively constant rolling mean and variance without drifting trends or expanding spreads."
         )
 
@@ -262,7 +262,7 @@ def render_eda_tab() -> None:
                 )
                 st.plotly_chart(fig_acf, width="stretch")
                 st.caption(
-                    "💡 **Explanation**: Autocorrelation Function (ACF) measures total linear correlation between observations separated by lag $k$. "
+                    "**Explanation**: Autocorrelation Function (ACF) measures total linear correlation between observations separated by lag $k$. "
                     "Spikes outside the shaded bounds indicate statistically significant autocorrelation. Slow geometric decay suggests non-stationarity, "
                     "while a sharp cutoff after lag $q$ suggests an MA($q$) process."
                 )
@@ -278,7 +278,7 @@ def render_eda_tab() -> None:
                 )
                 st.plotly_chart(fig_pacf, width="stretch")
                 st.caption(
-                    "💡 **Explanation**: Partial Autocorrelation Function (PACF) measures direct correlation between $y_t$ and $y_{t-k}$ after controlling for intermediate lags. "
+                    "**Explanation**: Partial Autocorrelation Function (PACF) measures direct correlation between $y_t$ and $y_{t-k}$ after controlling for intermediate lags. "
                     "A sharp cutoff after lag $p$ suggests an AR($p$) process, while significant spikes at seasonal intervals indicate seasonal autoregression."
                 )
 
@@ -286,7 +286,7 @@ def render_eda_tab() -> None:
             suggestions = suggest_orders(acf_vals, pacf_vals, conf_bound, m=inferred_m)
             seasonal_text = f"\n- **Seasonal Hint (m={inferred_m})**: {suggestions['seasonal_hint']}" if suggestions.get("seasonal_hint") else ""
             st.info(
-                f"💡 **Suggested Model Order Hints (Leading Contiguous Lags)**:\n"
+                f"**Suggested Model Order Hints (Leading Contiguous Lags)**:\n"
                 f"- **Suggested AR order $p$**: `{suggestions['suggested_p']}` (Contiguous significant PACF lags starting at lag 1)\n"
                 f"- **Suggested MA order $q$**: `{suggestions['suggested_q']}` (Contiguous significant ACF lags starting at lag 1)"
                 f"{seasonal_text}\n\n"
@@ -352,7 +352,7 @@ def render_eda_tab() -> None:
             )
 
             if decomp_res.get("error"):
-                st.error(f"⚠️ {decomp_res['error']}")
+                st.error(f"{decomp_res['error']}")
             else:
                 # Hyndman Strength Metrics
                 s_col1, s_col2, s_col3 = st.columns(3)
@@ -363,7 +363,7 @@ def render_eda_tab() -> None:
                 decomp_fig = plot_decomposition(decomp_res)
                 st.plotly_chart(decomp_fig, width="stretch")
                 st.caption(
-                    "💡 **Explanation**: Deconstructs the series into Observed, Trend-Cycle, Repeating Seasonal, and Residual components. "
+                    "**Explanation**: Deconstructs the series into Observed, Trend-Cycle, Repeating Seasonal, and Residual components. "
                     "High trend ($F_T$) or seasonal ($F_S$) strength indicates strong structural patterns. Residuals should ideally resemble mean-zero white noise."
                 )
 
@@ -391,9 +391,9 @@ def render_eda_tab() -> None:
         if "tf_status_msg" in st.session_state:
             msg_type, msg_text = st.session_state.pop("tf_status_msg")
             if msg_type == "success":
-                st.success(msg_text, icon="✅")
+                st.success(msg_text)
             else:
-                st.info(msg_text, icon="🔄")
+                st.info(msg_text)
 
         # Active Modeling Pipeline Status Badge
         curr_tf = st.session_state.get("transform_info", {})
@@ -403,13 +403,12 @@ def render_eda_tab() -> None:
         if curr_steps or curr_d > 0 or curr_D > 0:
             active_desc = " -> ".join(curr_steps) if curr_steps else "None"
             st.success(
-                f"⚡ **Active in Modeling Pipeline**: `{active_desc}` | Suggested: `d={curr_d}, D={curr_D}`. "
-                "Candidate models in the **🧮 Models** tab will use this variance-stabilized series.",
-                icon="🚀",
+                f"**Active in Modeling Pipeline**: `{active_desc}` | Suggested: `d={curr_d}, D={curr_D}`. "
+                "Candidate models in the **Models** tab will use this variance-stabilized series."
             )
         else:
             st.info(
-                "ℹ️ **Active in Modeling Pipeline**: Original Regularized Series (Raw scale, no transformations applied).",
+                "**Active in Modeling Pipeline**: Original Regularized Series (Raw scale, no transformations applied)."
             )
 
         t_ctrl1, t_ctrl2, t_ctrl3, t_ctrl4 = st.columns(4)
@@ -478,7 +477,7 @@ def render_eda_tab() -> None:
                 fig_orig = plot_time_series(series, title="Original Series", line_color="#64748b")
                 st.plotly_chart(fig_orig, width="stretch")
                 st.caption(
-                    "💡 **Explanation**: Raw regularized series before variance stabilization or differencing."
+                    "**Explanation**: Raw regularized series before variance stabilization or differencing."
                 )
             with c_comp2:
                 fig_trans = plot_time_series(
@@ -488,7 +487,7 @@ def render_eda_tab() -> None:
                 )
                 st.plotly_chart(fig_trans, width="stretch")
                 st.caption(
-                    "💡 **Explanation**: Series after variance transformation (Log/Box-Cox) and regular/seasonal differencing ($d, D$). "
+                    "**Explanation**: Series after variance transformation (Log/Box-Cox) and regular/seasonal differencing ($d, D$). "
                     "Aim for stable variance and fluctuation around a constant zero mean."
                 )
 
@@ -515,14 +514,14 @@ def render_eda_tab() -> None:
             )
             st.plotly_chart(tf_combined_fig, width="stretch")
             st.caption(
-                "💡 **Explanation**: ACF and PACF computed on the transformed series to guide candidate Box-Jenkins AR ($p$) and MA ($q$) orders."
+                "**Explanation**: ACF and PACF computed on the transformed series to guide candidate Box-Jenkins AR ($p$) and MA ($q$) orders."
             )
 
             # Action Buttons to set or reset model series
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
                 if st.button(
-                    "🚀 Use Transformed Series for Modeling",
+                    "Use Transformed Series for Modeling",
                     help="Save variance-stabilized series and suggested d, D for modeling.",
                     key="btn_apply_transformed_series",
                     use_container_width=True,
@@ -549,13 +548,13 @@ def render_eda_tab() -> None:
                     summary_str = ", ".join(desc_parts) if desc_parts else "Regularized raw series"
                     st.session_state["tf_status_msg"] = (
                         "success",
-                        f"Active modeling series updated to: **{summary_str}**! You can now proceed to the **🧮 Models** tab.",
+                        f"Active modeling series updated to: **{summary_str}**! You can now proceed to the **Models** tab.",
                     )
                     st.rerun()
 
             with btn_col2:
                 if st.button(
-                    "🔄 Reset to Original Regularized Series",
+                    "Reset to Original Regularized Series",
                     help="Restore active modeling series and transformation controls to original regularized data.",
                     key="btn_reset_regularized_series",
                     use_container_width=True,
@@ -602,7 +601,7 @@ def render_eda_tab() -> None:
             box_fig = plot_seasonal_box(seas_df, period_name=f"Period = {sub_period}")
             st.plotly_chart(box_fig, width="stretch")
             st.caption(
-                "💡 **Explanation**: Shows the distribution of values across each sub-period of the seasonal cycle. "
+                "**Explanation**: Shows the distribution of values across each sub-period of the seasonal cycle. "
                 "Differing median levels across periods confirm seasonal shifts, while differing box heights indicate seasonal volatility changes."
             )
         except Exception as exc:
@@ -615,7 +614,7 @@ def render_eda_tab() -> None:
         lag_fig = plot_lag(series, lag=selected_lag)
         st.plotly_chart(lag_fig, width="stretch")
         st.caption(
-            f"💡 **Explanation**: Scatter plot of $y_t$ versus $y_{{t-{selected_lag}}}$. Tight alignment along the 45° diagonal confirms strong positive autocorrelation at lag {selected_lag}, "
+            f"**Explanation**: Scatter plot of $y_t$ versus $y_{{t-{selected_lag}}}$. Tight alignment along the 45° diagonal confirms strong positive autocorrelation at lag {selected_lag}, "
             "whereas a diffuse circular cloud indicates little to no serial dependence."
         )
 
@@ -625,7 +624,7 @@ def render_eda_tab() -> None:
         dist_fig = plot_distribution_and_qq(series)
         st.plotly_chart(dist_fig, width="stretch")
         st.caption(
-            "💡 **Explanation**: Assesses distributional properties and normality. The histogram and KDE (left) reveal skewness and modality, "
+            "**Explanation**: Assesses distributional properties and normality. The histogram and KDE (left) reveal skewness and modality, "
             "while the Normal Q-Q plot (right) compares empirical quantiles to a theoretical normal distribution (points adhering to the red 45° line indicate normality)."
         )
 
