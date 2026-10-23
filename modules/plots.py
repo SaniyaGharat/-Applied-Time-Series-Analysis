@@ -2299,6 +2299,229 @@ def plot_single_dataset_arima_bars(
     return fig
 
 
+def plot_multi_indexed_overlay(
+    series_dict: Dict[str, pd.Series],
+    title: Optional[str] = None,
+) -> go.Figure:
+    """
+    Build an interactive multi-column indexed time series overlay (Base = 100 at start).
+    Allows direct visual comparison of relative trajectories and growth dynamics across columns.
+    """
+    palette = [
+        "#c2785c",
+        "#2563eb",
+        "#059669",
+        "#d97706",
+        "#7c3aed",
+        "#db2777",
+        "#0891b2",
+        "#4b5563",
+    ]
+
+    fig = go.Figure()
+
+    # Base line at 100
+    fig.add_hline(
+        y=100,
+        line_dash="dash",
+        line_color="#94a3b8",
+        annotation_text="Base 100",
+        annotation_position="bottom right",
+    )
+
+    for idx, (col_name, s) in enumerate(series_dict.items()):
+        clean_s = s.dropna() if s is not None else pd.Series(dtype=float)
+        if len(clean_s) == 0:
+            continue
+        base_val = float(clean_s.iloc[0]) if clean_s.iloc[0] != 0 else 1.0
+        idx_s = (clean_s / base_val) * 100.0
+
+        if len(idx_s) > 5000:
+            idx_s = idx_s.iloc[::max(1, len(idx_s) // 5000)]
+
+        color = palette[idx % len(palette)]
+        fig.add_trace(
+            go.Scatter(
+                x=idx_s.index,
+                y=idx_s.values,
+                mode="lines",
+                name=col_name,
+                line=dict(color=color, width=2.2),
+                hovertemplate=f"<b>{col_name}</b>: %{{y:.1f}} (Indexed)<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        title=title or "Multi-Column Comparative Growth Trajectory (Base = 100)",
+        xaxis=dict(title="Date / Timeline"),
+        yaxis=dict(title="Indexed Value (Base = 100)"),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig
+
+
+def plot_column_metric_comparison(
+    leaderboard_df: pd.DataFrame,
+) -> go.Figure:
+    """
+    Build a grouped bar chart comparing scale-free out-of-sample accuracy metrics (MASE and sMAPE) across columns.
+    """
+    if leaderboard_df is None or leaderboard_df.empty:
+        return go.Figure()
+
+    df = leaderboard_df.copy().sort_values("Rank")
+    cols = df["Column"].tolist()
+    mase_vals = df["MASE"].fillna(0).tolist()
+    smape_vals = df["sMAPE (%)"].fillna(0).tolist()
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            name="MASE (Lower is better)",
+            x=cols,
+            y=mase_vals,
+            marker_color="#c2785c",
+            text=[f"{v:.3f}" if v > 0 else "N/A" for v in mase_vals],
+            textposition="auto",
+            hovertemplate="<b>%{x}</b><br>MASE: %{y:.3f}<extra></extra>",
+        )
+    )
+
+    fig.add_trace(
+        go.Bar(
+            name="sMAPE % (Lower is better)",
+            x=cols,
+            y=smape_vals,
+            marker_color="#64748b",
+            text=[f"{v:.1f}%" if v > 0 else "N/A" for v in smape_vals],
+            textposition="auto",
+            hovertemplate="<b>%{x}</b><br>sMAPE: %{y:.1f}%<extra></extra>",
+        )
+    )
+
+    fig.update_layout(
+        template="plotly_white",
+        barmode="group",
+        title="Predictive Accuracy Comparison by Column (Scale-Free)",
+        xaxis=dict(title="Evaluated Column"),
+        yaxis=dict(title="Metric Value"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig
+
+
+def plot_column_component_bars(
+    leaderboard_df: pd.DataFrame,
+) -> go.Figure:
+    """
+    Build a grouped bar chart comparing Trend Strength and Seasonal Strength across candidate columns.
+    """
+    if leaderboard_df is None or leaderboard_df.empty:
+        return go.Figure()
+
+    df = leaderboard_df.copy().sort_values("Rank")
+    cols = df["Column"].tolist()
+    trend_vals = df["Trend Strength"].fillna(0).tolist()
+    seas_vals = df["Seasonal Strength"].fillna(0).tolist()
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            name="Trend Strength (0 to 1)",
+            x=cols,
+            y=trend_vals,
+            marker_color="#2563eb",
+            text=[f"{v:.2f}" for v in trend_vals],
+            textposition="auto",
+            hovertemplate="<b>%{x}</b><br>Trend Strength: %{y:.2f}<extra></extra>",
+        )
+    )
+
+    fig.add_trace(
+        go.Bar(
+            name="Seasonal Strength (0 to 1)",
+            x=cols,
+            y=seas_vals,
+            marker_color="#059669",
+            text=[f"{v:.2f}" for v in seas_vals],
+            textposition="auto",
+            hovertemplate="<b>%{x}</b><br>Seasonal Strength: %{y:.2f}<extra></extra>",
+        )
+    )
+
+    fig.update_layout(
+        template="plotly_white",
+        barmode="group",
+        title="Structural Decomposition Comparison (Trend vs Seasonality)",
+        xaxis=dict(title="Evaluated Column"),
+        yaxis=dict(title="Strength (0 = None, 1 = Deterministic)", range=[0, 1.1]),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig
+
+
+def plot_multi_column_future_projections(
+    bundles: Dict[str, Any],
+) -> go.Figure:
+    """
+    Build an overlay plot of multi-step forward projections across all evaluated columns.
+    """
+    palette = [
+        "#c2785c",
+        "#2563eb",
+        "#059669",
+        "#d97706",
+        "#7c3aed",
+        "#db2777",
+        "#0891b2",
+        "#4b5563",
+    ]
+
+    fig = go.Figure()
+
+    for idx, (col_name, bundle) in enumerate(bundles.items()):
+        fut = getattr(bundle, "future", None)
+        if fut is None or not hasattr(fut, "df") or fut.df is None or fut.df.empty:
+            continue
+        fc = fut.df["mean"].dropna() if "mean" in fut.df else fut.df.iloc[:, 0].dropna()
+        if len(fc) == 0:
+            continue
+
+        color = palette[idx % len(palette)]
+        model_name = getattr(bundle, "best_label", "Model")
+
+        fig.add_trace(
+            go.Scatter(
+                x=fc.index,
+                y=fc.values,
+                mode="lines+markers",
+                name=f"{col_name} ({model_name})",
+                line=dict(color=color, width=2.5),
+                marker=dict(size=5),
+                hovertemplate=f"<b>{col_name}</b> ({model_name})<br>Date: %{{x}}<br>Forecast: %{{y:.2f}}<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        title="Out-of-Sample Forward Projections Across Evaluated Columns",
+        xaxis=dict(title="Future Date Horizon"),
+        yaxis=dict(title="Projected Value"),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    return fig
+
+
+
 
 
 

@@ -36,18 +36,26 @@ An end-to-end interactive Streamlit web application designed for applied time se
   - `Holdout_Forecasts`: Holdout validation predictions and bounds
   - `Future_Forecast`: Forward projection point forecasts and intervals
   - `Specs`: Model JSON specifications, transforms, holdout size, and execution metadata
-- **Two-Dataset Comparative Analysis (`⚖️ Compare Datasets`)**:
-  - Side-by-side or stacked (A above B) deep comparative evaluation of two distinct time series.
-  - Independent slot configuration (Slot A and Slot B) with isolated session namespaces (`cmpA_*`, `cmpB_*`) and cached execution (`@st.cache_data`).
-  - 7 comprehensive comparative diagnostic and modeling sections with plain-English expanders:
-    1. Series & summary stats with base=100 indexed growth overlay
-    2. Joint ADF & KPSS stationarity tests with verdict banners
-    3. Contiguous differenced ACF / PACF serial correlation
-    4. Time series decomposition with Hyndman trend and seasonal strength metrics
-    5. Candidate model out-of-sample leaderboards ranked by MASE
-    6. Holdout validation forecast overlay across top-3 candidate architectures
-    7. Out-of-sample forward projections with 95% prediction intervals
-  - Scale-free metric guidance: explicit warnings that raw RMSE and MAE cannot be compared across series with different units.
+- **Dataset & Column Comparative Analysis (`⚖️ Compare Datasets`)**:
+  - **Single-Sheet Multi-Column Comparison & Best Column Finder**:
+    - Select or upload an Excel (with multi-sheet picker) or CSV spreadsheet.
+    - Choose 2 or more numeric columns to evaluate in parallel across econometric model zoos, structural decomposition, and stability metrics.
+    - Select your optimization criterion ("What is Best?"): *Balanced Overall Score*, *Lowest Forecast Error (Lowest MASE)*, *Strongest Trend Growth*, *Lowest Volatility*, or *Strongest Seasonality*.
+    - **🏆 Best Column Announcement**: Winner badge card, KPI metric cards, plain-English executive verdict explaining why it won, and category leaders.
+    - **Interactive Visualizations**: Multi-column base=100 indexed overlay, MASE/sMAPE accuracy grouped bars, trend vs seasonality bars, and multi-model forward forecast overlay.
+    - **Multi-Sheet Excel Export**: `column_comparison_report.xlsx` with `Leaderboard`, `Executive_Summary`, and `Future_Projections`.
+  - **Two-Dataset Comparative Analysis (Slot A vs Slot B)**:
+    - Side-by-side or stacked (A above B) deep comparative evaluation of two distinct time series (including option to pull from the active dataset in the Data tab).
+    - Independent slot configuration (Slot A and Slot B) with isolated session namespaces (`cmpA_*`, `cmpB_*`) and cached execution (`@st.cache_data`).
+    - 7 comprehensive comparative diagnostic and modeling sections with plain-English expanders:
+      1. Series & summary stats with base=100 indexed growth overlay
+      2. Joint ADF & KPSS stationarity tests with verdict banners
+      3. Contiguous differenced ACF / PACF serial correlation
+      4. Time series decomposition with Hyndman trend and seasonal strength metrics
+      5. Candidate model out-of-sample leaderboards ranked by MASE
+      6. Holdout validation forecast overlay across top-3 candidate architectures
+      7. Out-of-sample forward projections with 95% prediction intervals
+    - Scale-free metric guidance: explicit warnings that raw RMSE and MAE cannot be compared across series with different units.
 - **Executive Comparative Dashboard (`📊 Dashboard`)**:
   - Dataset metadata cards and date span chips.
   - Dual-row metric cards across 11 scale-free KPIs (22 total metrics).

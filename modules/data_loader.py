@@ -10,7 +10,7 @@ Provides utility functions to:
 - Produce clean pandas DataFrame/Series ready for time series analysis.
 """
 
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 import io
 import re
 import numpy as np
@@ -61,22 +61,24 @@ def normalize_pandas_freq(freq_str: Optional[str]) -> Optional[str]:
         return legacy_map.get(base_freq, base_freq)
 
 
-def load_uploaded_file(uploaded_file) -> pd.DataFrame:
+def load_uploaded_file(uploaded_file: Any, sheet_name: Optional[Union[str, int]] = 0) -> pd.DataFrame:
     """
-    Load an uploaded file (CSV or Excel) into a pandas DataFrame.
+    Load an uploaded CSV or Excel file into a pandas DataFrame.
 
     Parameters
     ----------
-    uploaded_file : UploadedFile or io.BytesIO
-        Streamlit UploadedFile or file-like object containing dataset.
+    uploaded_file : UploadedFile or file-like object
+        File uploaded via st.file_uploader.
+    sheet_name : Optional[Union[str, int]], default=0
+        Sheet name or 0-based index to read when uploaded_file is an Excel workbook.
 
     Returns
     -------
     pd.DataFrame
-        Raw loaded pandas DataFrame.
+        Loaded DataFrame.
 
     Raises
-    ------
+    -------
     ValueError
         If the file format is unsupported or file cannot be parsed.
     """
@@ -89,7 +91,7 @@ def load_uploaded_file(uploaded_file) -> pd.DataFrame:
         if file_name.endswith(".csv"):
             df = pd.read_csv(uploaded_file)
         elif file_name.endswith((".xlsx", ".xls")):
-            df = pd.read_excel(uploaded_file)
+            df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
         else:
             raise ValueError(f"Unsupported file format for '{uploaded_file.name}'. Please upload a CSV or Excel file.")
     except pd.errors.EmptyDataError:
@@ -101,6 +103,32 @@ def load_uploaded_file(uploaded_file) -> pd.DataFrame:
         raise ValueError(f"The uploaded file '{uploaded_file.name}' is empty (contains no data or columns).")
 
     return df
+
+
+def get_excel_sheet_names(uploaded_file: Any) -> List[str]:
+    """
+    Retrieve sheet names from an uploaded Excel workbook.
+
+    Parameters
+    ----------
+    uploaded_file : UploadedFile or file-like object
+        Uploaded file to inspect.
+
+    Returns
+    -------
+    List[str]
+        List of sheet names if Excel file, empty list otherwise.
+    """
+    if uploaded_file is None:
+        return []
+    file_name = getattr(uploaded_file, "name", "").lower()
+    if file_name.endswith((".xlsx", ".xls")):
+        try:
+            xl = pd.ExcelFile(uploaded_file)
+            return list(xl.sheet_names)
+        except Exception:
+            return []
+    return []
 
 
 def detect_date_columns(df: pd.DataFrame) -> List[str]:

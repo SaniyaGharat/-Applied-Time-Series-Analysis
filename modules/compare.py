@@ -573,3 +573,260 @@ def validate_uploaded_future_exog(
         subset.index = expected_index
 
     return subset
+
+
+def compare_columns_and_find_best(
+    bundles: Dict[str, Any],
+    criterion: str = "balanced",
+) -> Dict[str, Any]:
+    """
+    Compare multiple time series columns evaluated as AnalysisBundles and determine the best performer.
+
+    Parameters
+    ----------
+    bundles : Dict[str, AnalysisBundle]
+        Dictionary mapping column names to their fitted AnalysisBundle objects.
+    criterion : str, default='balanced'
+        Selection criterion:
+        - 'balanced': Multi-criteria composite score (Predictability 40%, Trend 25%, Stability 20%, Seasonality 15%).
+        - 'mase': Lowest forecast error / best out-of-sample predictability.
+        - 'trend': Strongest structural trend strength.
+        - 'stability': Most stable / lowest volatility (coefficient of variation).
+        - 'seasonality': Strongest recurring cyclical seasonality.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Dictionary containing:
+        - 'leaderboard_df': pd.DataFrame ranking all columns with all metrics.
+        - 'winner_column': str, name of the winning column.
+        - 'winner_bundle': AnalysisBundle of the winner.
+        - 'winner_score': float, score of the winning column.
+        - 'synthesis': str, detailed plain-English verdict explaining why it won.
+        - 'category_winners': Dict[str, str] mapping category to column name.
+        - 'criterion': str, criterion used.
+    """
+    if not bundles:
+        empty_df = pd.DataFrame(
+            columns=[
+                "Rank",
+                "Column",
+                "Overall Score",
+                "Best Model",
+                "MASE",
+                "sMAPE (%)",
+                "Rel. RMSE vs Naive",
+                "Trend Strength",
+                "Seasonal Strength",
+                "Volatility (CV)",
+                "Stationarity",
+                "Verdict",
+            ]
+        )
+        return {
+            "leaderboard_df": empty_df,
+            "winner_column": None,
+            "winner_bundle": None,
+            "winner_score": 0.0,
+            "synthesis": "No columns were provided for comparison.",
+            "category_winners": {},
+            "criterion": criterion,
+        }
+
+    records = []
+    for col_name, bundle in bundles.items():
+        s = getattr(bundle, "series", pd.Series(dtype=float)).dropna()
+        n_obs = len(s)
+        mean_val = float(s.mean()) if n_obs > 0 else 0.0
+        std_val = float(s.std()) if n_obs > 1 else 0.0
+        cv_val = float(std_val / abs(mean_val)) if (abs(mean_val) > 1e-9) else 0.0
+
+        decomp = getattr(bundle, "decomposition", {}) or {}
+        trend_str = float(decomp.get("trend_strength", 0.0))
+        seas_str = float(decomp.get("seasonal_strength", 0.0))
+        stationarity_dict = getattr(bundle, "stationarity", {}) or {}
+        verdict_st = stationarity_dict.get("verdict", "Unknown")
+
+        best_label = getattr(bundle, "best_label", "None") or "None"
+        comp_df = getattr(bundle, "comparison", pd.DataFrame())
+
+        best_mase = np.nan
+        best_smape = np.nan
+        best_rmse = np.nan
+        if comp_df is not None and not comp_df.empty:
+            conv = comp_df[comp_df["Converged"] == True]
+            row = conv.iloc[0] if not conv.empty else comp_df.iloc[0]
+            if "MASE" in row:
+                best_mase = float(row["MASE"])
+            if "sMAPE" in row:
+                best_smape = float(row["sMAPE"])
+            if "RMSE" in row:
+                best_rmse = float(row["RMSE"])
+
+        rel_rmse = getattr(bundle, "rel_rmse_best", np.nan)
+        if (np.isnan(rel_rmse) or rel_rmse is None) and not np.isnan(best_rmse) and getattr(bundle, "naive_rmse", np.nan) > 0:
+            rel_rmse = float(best_rmse / bundle.naive_rmse)
+
+        # Normalized sub-scores in [0, 100]
+        # 1. Predictability: lower MASE is better. MASE=0 => 100, MASE=1 => 50, MASE=2 => 33.3
+        if np.isfinite(best_mase) and best_mase >= 0:
+            pred_score = 100.0 / (1.0 + best_mase)
+        else:
+            pred_score = 20.0
+
+        # 2. Trend: higher is better [0, 100]
+        trend_score = min(100.0, max(0.0, trend_str * 100.0))
+
+        # 3. Stability: lower CV is better. CV=0 => 100, CV=0.5 => 66.7, CV=1.0 => 50
+        if np.isfinite(cv_val) and cv_val >= 0:
+            stab_score = 100.0 / (1.0 + min(10.0, cv_val))
+        else:
+            stab_score = 30.0
+
+        # 4. Seasonality: [0, 100]
+        seas_score = min(100.0, max(0.0, seas_str * 100.0))
+
+        # Composite score
+        if criterion == "mase":
+            score = pred_score
+        elif criterion == "trend":
+            score = trend_score
+        elif criterion == "stability":
+            score = stab_score
+        elif criterion == "seasonality":
+            score = seas_score
+        else:  # balanced
+            score = 0.40 * pred_score + 0.25 * trend_score + 0.20 * stab_score + 0.15 * seas_score
+
+        records.append({
+            "col_name": col_name,
+            "bundle": bundle,
+            "score": round(float(score), 1),
+            "best_model": best_label,
+            "mase": best_mase,
+            "smape": best_smape,
+            "rmse": best_rmse,
+            "rel_rmse": rel_rmse,
+            "trend_strength": trend_str,
+            "seasonal_strength": seas_str,
+            "cv": cv_val,
+            "mean": mean_val,
+            "std": std_val,
+            "n_obs": n_obs,
+            "stationarity": verdict_st,
+            "pred_score": pred_score,
+            "trend_score": trend_score,
+            "stab_score": stab_score,
+            "seas_score": seas_score,
+        })
+
+    # Sort records based on criterion
+    if criterion == "mase":
+        # Sort by MASE ascending (NaNs placed at end)
+        records.sort(key=lambda r: (1e9 if not np.isfinite(r["mase"]) else r["mase"], -r["score"]))
+    elif criterion == "trend":
+        records.sort(key=lambda r: (-r["trend_strength"], -r["score"]))
+    elif criterion == "stability":
+        records.sort(key=lambda r: (1e9 if not np.isfinite(r["cv"]) else r["cv"], -r["score"]))
+    elif criterion == "seasonality":
+        records.sort(key=lambda r: (-r["seasonal_strength"], -r["score"]))
+    else:
+        records.sort(key=lambda r: -r["score"])
+
+    # Determine category winners
+    # Most predictable (lowest finite MASE)
+    valid_mase = [r for r in records if np.isfinite(r["mase"])]
+    most_pred = min(valid_mase, key=lambda r: r["mase"])["col_name"] if valid_mase else records[0]["col_name"]
+
+    # Strongest trend
+    strongest_trend = max(records, key=lambda r: r["trend_strength"])["col_name"]
+
+    # Most stable (lowest finite CV)
+    valid_cv = [r for r in records if np.isfinite(r["cv"])]
+    most_stable = min(valid_cv, key=lambda r: r["cv"])["col_name"] if valid_cv else records[0]["col_name"]
+
+    # Strongest seasonality
+    strongest_seas = max(records, key=lambda r: r["seasonal_strength"])["col_name"]
+
+    category_winners = {
+        "most_predictable": most_pred,
+        "strongest_trend": strongest_trend,
+        "most_stable": most_stable,
+        "strongest_seasonality": strongest_seas,
+    }
+
+    winner = records[0]
+    winner_col = winner["col_name"]
+    winner_bundle = winner["bundle"]
+    winner_score = winner["score"]
+
+    # Build plain-English synthesis explaining why this column won
+    crit_labels = {
+        "balanced": "Balanced Multi-Criteria Evaluation (Accuracy, Trend & Stability)",
+        "mase": "Lowest Forecast Error (Out-of-sample MASE)",
+        "trend": "Strongest Structural Trend Growth",
+        "stability": "Lowest Volatility & Highest Consistency",
+        "seasonality": "Strongest Recurring Seasonality",
+    }
+    crit_desc = crit_labels.get(criterion, "Evaluation")
+
+    mase_str = f"{winner['mase']:.3f}" if np.isfinite(winner['mase']) else "N/A"
+    smape_str = f"{winner['smape']:.1f}%" if np.isfinite(winner['smape']) else "N/A"
+    rel_str = f"{winner['rel_rmse']:.3f}" if np.isfinite(winner['rel_rmse']) else "N/A"
+    rel_pct = f"{(1.0 - winner['rel_rmse']) * 100:.1f}%" if np.isfinite(winner['rel_rmse']) and winner['rel_rmse'] < 1.0 else "None"
+
+    gain_note = f" (beating the Naive baseline by {rel_pct})" if rel_pct != "None" else ""
+    synthesis = (
+        f"**🏆 Winner Announcement**: Column **`{winner_col}`** emerged as the **Best Column** with an Overall Performance Score of **{winner_score:.1f}/100** under *{crit_desc}*.\n\n"
+        f"- **Model Fit & Forecast Accuracy**: Best model architecture is **{winner['best_model']}** with an out-of-sample MASE of **{mase_str}** and sMAPE of **{smape_str}**{gain_note}.\n"
+        f"- **Structural Dynamics**: Trend strength is **{winner['trend_strength']:.2f}** with seasonal strength of **{winner['seasonal_strength']:.2f}** and coefficient of variation CV = **{winner['cv']:.2f}**.\n"
+        f"- **Stationarity Status**: Diagnosed as **{winner['stationarity']}** across joint ADF and KPSS tests."
+    )
+
+    if len(records) > 1:
+        other_notes = []
+        if strongest_trend != winner_col:
+            st_r = next(r for r in records if r["col_name"] == strongest_trend)
+            other_notes.append(f"Column **`{strongest_trend}`** exhibited the strongest directional trend ({st_r['trend_strength']:.2f})")
+        if most_stable != winner_col:
+            ms_r = next(r for r in records if r["col_name"] == most_stable)
+            other_notes.append(f"Column **`{most_stable}`** showed the lowest volatility (CV: {ms_r['cv']:.2f})")
+        if most_pred != winner_col:
+            mp_r = next(r for r in records if r["col_name"] == most_pred)
+            other_notes.append(f"Column **`{most_pred}`** achieved the lowest raw MASE ({mp_r['mase']:.3f})")
+
+        if other_notes:
+            synthesis += "\n\n**Key Comparison Highlights**:\n- " + "\n- ".join(other_notes) + "."
+
+    # Construct Leaderboard DataFrame
+    rows = []
+    for rank_idx, r in enumerate(records, start=1):
+        is_winner = rank_idx == 1
+        verdict = "🏆 Best Performer" if is_winner else ("Top Predictability" if r["col_name"] == most_pred else ("Strong Trend" if r["col_name"] == strongest_trend else "Contender"))
+        rows.append({
+            "Rank": rank_idx,
+            "Column": r["col_name"],
+            "Overall Score": r["score"],
+            "Best Model": r["best_model"],
+            "MASE": round(r["mase"], 3) if np.isfinite(r["mase"]) else np.nan,
+            "sMAPE (%)": round(r["smape"], 2) if np.isfinite(r["smape"]) else np.nan,
+            "Rel. RMSE vs Naive": round(r["rel_rmse"], 3) if np.isfinite(r["rel_rmse"]) else np.nan,
+            "Trend Strength": round(r["trend_strength"], 2),
+            "Seasonal Strength": round(r["seasonal_strength"], 2),
+            "Volatility (CV)": round(r["cv"], 2) if np.isfinite(r["cv"]) else np.nan,
+            "Stationarity": r["stationarity"],
+            "Verdict": verdict,
+        })
+
+    leaderboard_df = pd.DataFrame(rows)
+
+    return {
+        "leaderboard_df": leaderboard_df,
+        "winner_column": winner_col,
+        "winner_bundle": winner_bundle,
+        "winner_score": winner_score,
+        "synthesis": synthesis,
+        "category_winners": category_winners,
+        "criterion": criterion,
+    }
+

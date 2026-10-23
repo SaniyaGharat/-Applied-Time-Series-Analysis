@@ -186,3 +186,75 @@ def build_dashboard_report(
 
     return output.getvalue()
 
+
+def build_column_comparison_report(
+    leaderboard_df: pd.DataFrame,
+    synthesis: str,
+    criterion: str,
+    category_winners: Dict[str, str],
+    bundles: Optional[Dict[str, Any]] = None,
+) -> bytes:
+    """
+    Generate a styled multi-sheet Excel report comparing multiple columns within a dataset/sheet.
+
+    Sheets:
+    1. Leaderboard: Overall rankings and scale-free metrics across all evaluated columns.
+    2. Executive_Summary: Evaluation criteria, winner announcement, plain-English synthesis, and category winners.
+    3. Future_Projections: Multi-step forward predictions across candidate columns.
+
+    Returns
+    -------
+    bytes
+        Raw Excel workbook binary stream.
+    """
+    output = io.BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        # Sheet 1: Leaderboard
+        if leaderboard_df is not None and not leaderboard_df.empty:
+            leaderboard_df.to_excel(writer, sheet_name="Leaderboard", index=False)
+        else:
+            pd.DataFrame({"Info": ["No leaderboard data available"]}).to_excel(
+                writer, sheet_name="Leaderboard", index=False
+            )
+
+        # Sheet 2: Executive_Summary
+        summary_rows = [
+            {"Property": "Evaluation Criterion", "Value": criterion},
+            {"Property": "Winning Column", "Value": str(category_winners.get("most_predictable", "N/A"))},
+            {"Property": "Most Predictable Column (Lowest MASE)", "Value": str(category_winners.get("most_predictable", "N/A"))},
+            {"Property": "Strongest Trend Column", "Value": str(category_winners.get("strongest_trend", "N/A"))},
+            {"Property": "Most Stable Column (Lowest CV)", "Value": str(category_winners.get("most_stable", "N/A"))},
+            {"Property": "Strongest Seasonality Column", "Value": str(category_winners.get("strongest_seasonality", "N/A"))},
+            {"Property": "Executive Synthesis", "Value": synthesis.replace("**", "").replace("#", "")},
+        ]
+        pd.DataFrame(summary_rows).to_excel(writer, sheet_name="Executive_Summary", index=False)
+
+        # Sheet 3: Future_Projections
+        future_frames = []
+        if bundles:
+            for col_name, bundle in bundles.items():
+                fut = getattr(bundle, "future", None)
+                if fut is not None and hasattr(fut, "df") and fut.df is not None and not fut.df.empty:
+                    f_df = pd.DataFrame({
+                        "Column": col_name,
+                        "Date": fut.df.index,
+                        "Mean_Forecast": fut.df["mean"].values if "mean" in fut.df else fut.df.iloc[:, 0].values,
+                    })
+                    if "lower" in fut.df:
+                        f_df["Lower_95"] = fut.df["lower"].values
+                    if "upper" in fut.df:
+                        f_df["Upper_95"] = fut.df["upper"].values
+                    future_frames.append(f_df)
+
+        if future_frames:
+            combined_future = pd.concat(future_frames, ignore_index=True)
+            combined_future.to_excel(writer, sheet_name="Future_Projections", index=False)
+        else:
+            pd.DataFrame({"Info": ["No future forecast projections available"]}).to_excel(
+                writer, sheet_name="Future_Projections", index=False
+            )
+
+    return output.getvalue()
+
+

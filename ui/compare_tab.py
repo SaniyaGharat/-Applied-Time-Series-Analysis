@@ -20,14 +20,17 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from modules.compare import compare_columns_and_find_best
 from modules.data_loader import (
     detect_date_columns,
     detect_numeric_columns,
+    get_excel_sheet_names,
     load_uploaded_file,
     prepare_time_series,
     regularize_series,
 )
 from modules.diagnostics import decompose
+from modules.export import build_column_comparison_report
 from modules.pipeline import AnalysisBundle, build_arima_family_comparison, run_analysis
 from modules.plots import (
     plot_acf_pacf_combined,
@@ -35,10 +38,14 @@ from modules.plots import (
     plot_arima_family_bars,
     plot_arima_multi_metric_bars,
     plot_arima_radar,
+    plot_column_component_bars,
+    plot_column_metric_comparison,
     plot_decomposition,
     plot_forecast_overlay,
     plot_future_forecast,
     plot_indexed_overlay,
+    plot_multi_column_future_projections,
+    plot_multi_indexed_overlay,
     plot_time_series,
 )
 from ui.data_tab import SAMPLE_DATASETS, create_demo_data
@@ -113,6 +120,8 @@ def _render_slot_config(
         "AirPassengers (Monthly 1949-1960)",
         "Upload CSV/XLSX",
     ]
+    if st.session_state.get("raw_df") is not None:
+        source_options.append("Active Dataset (from Data Tab)")
 
     selected_source = st.selectbox(
         f"Select Data Source ({slot}):",
@@ -140,6 +149,12 @@ def _render_slot_config(
             air_path = DATA_DIR / "AirPassengers.csv"
             st.error(f"AirPassengers dataset file not found at {air_path}.")
             return None, None, None, None
+
+    elif selected_source == "Active Dataset (from Data Tab)":
+        raw_df = st.session_state.get("raw_df")
+        default_date = st.session_state.get("selected_date_col")
+        default_target = st.session_state.get("selected_target_col")
+        source_name = f"{st.session_state.get('source_name', 'Active Dataset')} ({slot})"
 
     else:
         uploaded_file = st.file_uploader(
@@ -244,8 +259,305 @@ def _render_slot_config(
     return reg_s, source_name, None, None
 
 
-def render_compare_tab() -> None:
-    """Render the full Phase 8 Two-Dataset Comparison Workspace."""
+def _render_column_comparison_section() -> None:
+    """Render the single-sheet multi-column comparison and best performer recommendation workspace."""
+    st.subheader("Compare Columns of a Sheet & Find What is Best")
+    st.markdown(
+        "Upload a spreadsheet (CSV or multi-sheet Excel) or use the active sheet, select the columns you want to evaluate, "
+        "and automatically evaluate model accuracy, structural trend, and stability to discover **which column is best**."
+    )
+
+    # 1. Sheet Data Source Selector
+    c_src, c_sheet = st.columns([2, 1.5])
+    with c_src:
+        sheet_source_options = [
+            "Upload CSV / Excel Spreadsheet",
+            "Demo Monthly Sales & Marketing (Synthetic)",
+            "Active Dataset (from Data Tab)",
+            "AirPassengers (Monthly)",
+        ]
+        chosen_src = st.selectbox(
+            "Select Spreadsheet Data Source:",
+            options=sheet_source_options,
+            index=0,
+            key="colcmp_source_select",
+        )
+
+    raw_df: Optional[pd.DataFrame] = None
+    sheet_name_display = chosen_src
+
+    if chosen_src == "Active Dataset (from Data Tab)":
+        raw_df = st.session_state.get("raw_df")
+        sheet_name_display = st.session_state.get("source_name", "Active Dataset")
+        if raw_df is None:
+            st.info("No dataset is currently loaded in the **Data** tab. Please upload a file or select 'Upload CSV / Excel Spreadsheet' above.")
+            return
+    elif chosen_src == "Demo Monthly Sales & Marketing (Synthetic)":
+        raw_df = _load_cached_compare_source("demo")
+        sheet_name_display = "Demo Monthly Sales & Marketing"
+    elif chosen_src == "AirPassengers (Monthly)":
+        raw_df = _load_cached_compare_source("air")
+        sheet_name_display = "AirPassengers"
+    else:
+        uploaded_file = st.file_uploader(
+            "Upload Spreadsheet (.xlsx, .xls, .csv):",
+            type=["xlsx", "xls", "csv"],
+            key="colcmp_file_uploader",
+        )
+        if uploaded_file is None:
+            st.info("Please upload an Excel or CSV file containing multiple numeric columns to compare.")
+            return
+
+        sheet_names = get_excel_sheet_names(uploaded_file)
+        sel_sheet: Any = 0
+        if len(sheet_names) > 1:
+            with c_sheet:
+                sel_sheet = st.selectbox(
+                    "Select Sheet from Workbook:",
+                    options=sheet_names,
+                    key="colcmp_excel_sheet_picker",
+                )
+        try:
+            raw_df = load_uploaded_file(uploaded_file, sheet_name=sel_sheet)
+            sheet_name_display = f"{uploaded_file.name} [{sel_sheet if isinstance(sel_sheet, str) else 'Sheet 1'}]"
+        except Exception as err:
+            st.error(f"Failed to read spreadsheet: {err}")
+            return
+
+    if raw_df is None or raw_df.empty:
+        st.error("The selected sheet contains no data rows.")
+        return
+
+    if len(raw_df) < 5:
+        st.error(f"The sheet has only {len(raw_df)} row(s). Time series comparison requires at least 5 observations.")
+        return
+
+    all_cols = list(raw_df.columns)
+    detected_dates = detect_date_columns(raw_df)
+    detected_numerics = detect_numeric_columns(raw_df)
+
+    if not detected_numerics:
+        st.error("No numeric columns found in the spreadsheet to compare.")
+        return
+
+    date_default_idx = 0
+    if detected_dates and detected_dates[0] in all_cols:
+        date_default_idx = all_cols.index(detected_dates[0])
+
+    # 2. Column Selection & Preprocessing
+    st.markdown("---")
+    st.markdown("##### 1. Select Columns & Evaluation Criterion")
+    c_d, c_t, c_crit = st.columns([1.2, 2.2, 1.8])
+
+    with c_d:
+        date_col = st.selectbox(
+            "Date / Timestamp Column:",
+            options=all_cols,
+            index=date_default_idx,
+            key="colcmp_date_col",
+        )
+
+    with c_t:
+        numeric_candidates = [c for c in (detected_numerics or all_cols) if c != date_col]
+        default_targets = numeric_candidates[:min(4, len(numeric_candidates))]
+        selected_target_cols = st.multiselect(
+            "Select Columns to Compare:",
+            options=numeric_candidates,
+            default=default_targets,
+            help="Choose 2 or more numeric columns from the sheet to evaluate and rank.",
+            key="colcmp_target_cols",
+        )
+
+    with c_crit:
+        criterion_map = {
+            "Balanced Overall Score (Accuracy + Trend + Stability)": "balanced",
+            "Lowest Forecast Error / Most Predictable (Lowest MASE)": "mase",
+            "Strongest Structural Trend Growth": "trend",
+            "Most Stable / Lowest Volatility (Lowest CV)": "stability",
+            "Strongest Recurring Seasonality": "seasonality",
+        }
+        chosen_crit_label = st.selectbox(
+            "Criterion for 'What is Best?':",
+            options=list(criterion_map.keys()),
+            index=0,
+            key="colcmp_criterion_select",
+        )
+        criterion_code = criterion_map[chosen_crit_label]
+
+    # Preprocessing settings row
+    p1, p2, p3 = st.columns(3)
+    with p1:
+        freq_opts = ["Auto-detect", "MS - Month Start", "D - Day", "W - Week", "h - Hour", "QS - Quarter Start", "YS - Year Start"]
+        sel_freq = st.selectbox("Frequency:", options=freq_opts, index=0, key="colcmp_freq")
+    with p2:
+        sel_fill = st.selectbox("Imputation:", options=["interpolate", "ffill", "bfill", "drop"], index=0, key="colcmp_fill")
+    with p3:
+        dayfirst = st.checkbox("Day-first format (DD/MM/YYYY)", value=False, key="colcmp_dayfirst")
+
+    # Action Button
+    st.markdown("---")
+    btn_c, _ = st.columns([2, 3])
+    with btn_c:
+        run_col_cmp = st.button("Compare Columns & Determine Winner", type="primary", use_container_width=True, key="colcmp_run_btn")
+
+    if run_col_cmp:
+        if not selected_target_cols or len(selected_target_cols) < 2:
+            st.error("Please select at least 2 columns to compare.")
+            return
+
+        with st.spinner(f"Evaluating models, trend, and stability across {len(selected_target_cols)} columns..."):
+            bundles = {}
+            series_dict = {}
+            freq_code = sel_freq.split()[0] if sel_freq != "Auto-detect" else None
+
+            for col in selected_target_cols:
+                try:
+                    reg_s = _cached_prep_and_reg_slot(
+                        raw_df=raw_df,
+                        date_col=date_col,
+                        target_col=col,
+                        dayfirst=dayfirst,
+                        freq_code=freq_code,
+                        sel_fill=sel_fill,
+                    )
+                    if len(reg_s.dropna()) >= 2:
+                        bundle = cached_run_analysis(
+                            series=reg_s,
+                            name=col,
+                            m=None,
+                            holdout=None,
+                            horizon=None,
+                        )
+                        bundles[col] = bundle
+                        series_dict[col] = reg_s
+                except Exception as col_err:
+                    st.warning(f"Could not analyze column '{col}': {col_err}")
+
+            if len(bundles) < 2:
+                st.error("Could not evaluate at least 2 valid columns after date and frequency alignment.")
+                return
+
+            col_res = compare_columns_and_find_best(bundles, criterion=criterion_code)
+            st.session_state["col_cmp_result"] = col_res
+            st.session_state["col_cmp_bundles"] = bundles
+            st.session_state["col_cmp_series"] = series_dict
+            st.success("Comparison completed successfully! See the winner and rankings below.")
+
+    # Render results if available
+    col_res = st.session_state.get("col_cmp_result")
+    col_bundles = st.session_state.get("col_cmp_bundles")
+    col_series = st.session_state.get("col_cmp_series")
+
+    if not col_res or not col_bundles:
+        return
+
+    st.markdown("---")
+    winner_col = col_res["winner_column"]
+    winner_score = col_res["winner_score"]
+    leaderboard_df = col_res["leaderboard_df"]
+    cat_winners = col_res["category_winners"]
+
+    # Winner Card
+    st.markdown(
+        f"""
+        <div style="background: linear-gradient(135deg, #fffaf7 0%, #fbf0ea 100%);
+                    border: 2px solid #c2785c; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+            <div style="font-size: 0.95rem; font-weight: 600; color: #8c462b; text-transform: uppercase; letter-spacing: 0.05em;">
+                🏆 Best Overall Column Winner
+            </div>
+            <div style="font-size: 2.2rem; font-weight: 800; color: #1c1917; margin: 4px 0;">
+                {winner_col}
+            </div>
+            <div style="font-size: 1rem; color: #44403c; margin-top: 4px;">
+                Achieved the highest overall score of <b>{winner_score:.1f}/100</b> under <i>{chosen_crit_label}</i>.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Metric Cards Row
+    w_bundle = col_res["winner_bundle"]
+    w_best_model = getattr(w_bundle, "best_label", "None")
+    w_mase_rows = leaderboard_df.loc[leaderboard_df["Column"] == winner_col, "MASE"].values
+    w_mase = w_mase_rows[0] if len(w_mase_rows) > 0 else np.nan
+    w_trend_rows = leaderboard_df.loc[leaderboard_df["Column"] == winner_col, "Trend Strength"].values
+    w_trend = w_trend_rows[0] if len(w_trend_rows) > 0 else 0.0
+    w_cv_rows = leaderboard_df.loc[leaderboard_df["Column"] == winner_col, "Volatility (CV)"].values
+    w_cv = w_cv_rows[0] if len(w_cv_rows) > 0 else 0.0
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Winning Architecture", w_best_model)
+    c2.metric("Best Model MASE", f"{w_mase:.3f}" if pd.notna(w_mase) else "N/A", delta="Scale-free error", delta_color="inverse")
+    c3.metric("Trend Strength", f"{w_trend:.2f}", delta="Structural Signal")
+    c4.metric("Volatility (CV)", f"{w_cv:.2f}", delta="Noise / Stability", delta_color="inverse")
+
+    # Synthesis Callout
+    st.info(col_res["synthesis"])
+
+    # Category Winners Badges
+    st.markdown("##### Category Winners Breakdown")
+    cat_c1, cat_c2, cat_c3, cat_c4 = st.columns(4)
+    cat_c1.metric("🎯 Most Predictable", cat_winners.get("most_predictable", "N/A"), help="Lowest out-of-sample forecast error (MASE)")
+    cat_c2.metric("📈 Strongest Trend", cat_winners.get("strongest_trend", "N/A"), help="Highest structural trend strength")
+    cat_c3.metric("🛡️ Most Stable", cat_winners.get("most_stable", "N/A"), help="Lowest coefficient of variation (least volatile)")
+    cat_c4.metric("🔄 Strongest Seasonality", cat_winners.get("strongest_seasonality", "N/A"), help="Highest seasonal strength")
+
+    # Comparative Leaderboard Table
+    st.markdown("---")
+    st.markdown("##### Multi-Column Leaderboard & Performance Ranking")
+    st.dataframe(
+        leaderboard_df,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # Visualizations
+    st.markdown("---")
+    st.markdown("##### Comparative Visualizations")
+    tab_trj, tab_acc, tab_comp, tab_proj = st.tabs([
+        "📈 Indexed Trajectory Overlay (Base=100)",
+        "📊 Accuracy Comparison (MASE & sMAPE)",
+        "🔍 Trend vs Seasonality",
+        "🔮 Future Forecast Projections",
+    ])
+
+    with tab_trj:
+        fig_trj = plot_multi_indexed_overlay(col_series)
+        st.plotly_chart(fig_trj, use_container_width=True)
+
+    with tab_acc:
+        fig_acc = plot_column_metric_comparison(leaderboard_df)
+        st.plotly_chart(fig_acc, use_container_width=True)
+
+    with tab_comp:
+        fig_comp = plot_column_component_bars(leaderboard_df)
+        st.plotly_chart(fig_comp, use_container_width=True)
+
+    with tab_proj:
+        fig_proj = plot_multi_column_future_projections(col_bundles)
+        st.plotly_chart(fig_proj, use_container_width=True)
+
+    # Excel Download
+    st.markdown("---")
+    excel_bytes = build_column_comparison_report(
+        leaderboard_df=leaderboard_df,
+        synthesis=col_res["synthesis"],
+        criterion=chosen_crit_label,
+        category_winners=cat_winners,
+        bundles=col_bundles,
+    )
+    st.download_button(
+        label="📥 Download Multi-Column Comparison Report (.xlsx)",
+        data=excel_bytes,
+        file_name="column_comparison_report.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
+
+
+def _render_two_dataset_comparison_section() -> None:
+    """Render the dual-slot Two-Dataset Comparison Workspace (Slot A vs Slot B)."""
     st.subheader("Two-Dataset Comparative Analysis")
     st.markdown(
         "Compare statistical properties, stationarity, autocorrelation, component decomposition, "
@@ -647,3 +959,18 @@ def render_compare_tab() -> None:
         lambda: _render_future(b_a, "a"),
         lambda: _render_future(b_b, "b"),
     )
+
+
+def render_compare_tab() -> None:
+    """Render the Comparative Analysis Workspace."""
+    tab_cols, tab_slots = st.tabs([
+        "📊 Compare Columns of a Sheet (Find What is Best)",
+        "⚖️ Compare Two Datasets (Slot A vs Slot B)",
+    ])
+
+    with tab_cols:
+        _render_column_comparison_section()
+
+    with tab_slots:
+        _render_two_dataset_comparison_section()
+
