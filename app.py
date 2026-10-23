@@ -78,119 +78,118 @@ def main() -> None:
             font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         }
 
-        /* Subtle multi-tone pastel ambient background */
+        /* Clean neutral warm background */
         .stApp {
-            background: linear-gradient(135deg, #f5f3ff 0%, #fdf2f8 35%, #f0fdfa 70%, #f8fafc 100%) !important;
-            background-attachment: fixed !important;
-            color: #1e293b;
+            background-color: #fdfbf9 !important;
+            color: #1c1917;
         }
 
-        /* Sidebar: soft pastel surface */
+        /* Sidebar: crisp warm surface */
         [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #fbfbfe 0%, #f3f4fa 100%) !important;
-            border-right: 1px solid rgba(226, 232, 240, 0.8) !important;
-            box-shadow: 2px 0 12px rgba(99, 102, 241, 0.04);
+            background-color: #ffffff !important;
+            border-right: 1px solid #f2ebe5 !important;
+            box-shadow: 1px 0 4px rgba(0, 0, 0, 0.02);
         }
 
-        /* Clean titles with subtle pastel emphasis */
+        /* Clean titles in warm charcoal */
         h1 {
             font-weight: 700 !important;
             letter-spacing: -0.02em;
-            color: #1e1b4b !important;
+            color: #1c1917 !important;
         }
         h2, h3, h4, h5 {
             font-weight: 600 !important;
             letter-spacing: -0.01em;
-            color: #312e81 !important;
+            color: #292524 !important;
         }
 
-        /* Modern pill-style pastel tabs */
+        /* Modern pill tabs with single pastel warm peach/sand accent */
         div[data-testid="stTabs"] button[data-baseweb="tab"] {
             border-radius: 8px !important;
             padding: 8px 18px !important;
             font-weight: 500 !important;
-            color: #64748b !important;
+            color: #78716c !important;
             border: none !important;
             background-color: transparent !important;
             transition: all 0.2s ease-in-out !important;
         }
         div[data-testid="stTabs"] button[data-baseweb="tab"]:hover {
-            color: #4338ca !important;
-            background-color: rgba(224, 231, 255, 0.5) !important;
+            color: #a35d41 !important;
+            background-color: rgba(251, 240, 234, 0.7) !important;
         }
         div[data-testid="stTabs"] button[aria-selected="true"] {
-            background-color: #e0e7ff !important;
-            color: #3730a3 !important;
+            background-color: #fbf0ea !important;
+            color: #8c462b !important;
             font-weight: 600 !important;
-            box-shadow: 0 1px 4px rgba(99, 102, 241, 0.12) !important;
+            border: 1px solid #ebd0c2 !important;
+            box-shadow: 0 1px 2px rgba(194, 120, 92, 0.08) !important;
         }
         div[data-testid="stTabs"] [data-testid="stTabsHeader"] {
-            background: rgba(255, 255, 255, 0.75) !important;
+            background: #ffffff !important;
             padding: 6px !important;
             border-radius: 12px !important;
-            border: 1px solid rgba(226, 232, 240, 0.85) !important;
-            backdrop-filter: blur(8px) !important;
+            border: 1px solid #f2ebe5 !important;
             margin-bottom: 1.25rem !important;
         }
 
-        /* Metric cards with soft pastel glow */
+        /* Metric cards: clean white with warm neutral border */
         [data-testid="stMetric"] {
-            background: linear-gradient(135deg, #ffffff 0%, #f8faff 100%) !important;
-            border: 1px solid rgba(199, 210, 254, 0.7) !important;
+            background: #ffffff !important;
+            border: 1px solid #f2ebe5 !important;
             border-radius: 12px !important;
             padding: 14px 18px !important;
-            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.04) !important;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
         }
         [data-testid="stMetricLabel"] {
-            color: #64748b !important;
+            color: #78716c !important;
             font-weight: 500 !important;
             font-size: 0.85rem !important;
         }
         [data-testid="stMetricValue"] {
-            color: #1e1b4b !important;
+            color: #1c1917 !important;
             font-weight: 700 !important;
         }
 
-        /* Modern pastel buttons */
+        /* Buttons with single pastel warm sand/peach accent */
         .stButton > button {
             border-radius: 10px !important;
             font-weight: 500 !important;
-            border: 1px solid rgba(199, 210, 254, 0.85) !important;
-            background: linear-gradient(135deg, #ffffff 0%, #eef2ff 100%) !important;
-            color: #3730a3 !important;
+            border: 1px solid #e7dfd8 !important;
+            background: #ffffff !important;
+            color: #44403c !important;
             transition: all 0.15s ease-in-out !important;
-            box-shadow: 0 1px 3px rgba(99, 102, 241, 0.08) !important;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
         }
         .stButton > button:hover {
-            background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%) !important;
-            color: #312e81 !important;
-            border-color: #a5b4fc !important;
+            background: #fbf0ea !important;
+            color: #8c462b !important;
+            border-color: #ebd0c2 !important;
             transform: translateY(-1px) !important;
-            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15) !important;
+            box-shadow: 0 3px 8px rgba(194, 120, 92, 0.12) !important;
         }
         .stButton > button[kind="primary"] {
-            background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%) !important;
+            background: #c2785c !important;
             color: #ffffff !important;
             border: none !important;
-            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25) !important;
+            box-shadow: 0 2px 6px rgba(194, 120, 92, 0.22) !important;
         }
         .stButton > button[kind="primary"]:hover {
-            background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%) !important;
-            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35) !important;
+            background: #ab6247 !important;
+            box-shadow: 0 4px 10px rgba(194, 120, 92, 0.3) !important;
         }
 
-        /* Alert boxes in pastel tones */
+        /* Alert boxes */
         [data-testid="stAlert"] {
             border-radius: 10px !important;
         }
 
-        /* Plotly charts styled as pastel cards */
+        /* Plotly charts styled as clean cards */
         div.js-plotly-plot {
             background: #ffffff !important;
             border-radius: 12px !important;
             padding: 8px !important;
-            border: 1px solid rgba(226, 232, 240, 0.85) !important;
-            box-shadow: 0 2px 10px rgba(100, 116, 139, 0.04) !important;
+            border: 1px solid #f2ebe5 !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03) !important;
         }
         </style>
         """,
